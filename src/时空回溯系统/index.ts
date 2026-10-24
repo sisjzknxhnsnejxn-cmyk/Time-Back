@@ -74,9 +74,37 @@ function init() {
     store.refreshChatSlots();
   });
 
+  const beforeGenListeners: Array<{ stop: () => void }> = [];
+  const registerBeforeGenEvent = (evtName: any) => {
+    if (!evtName) return;
+    try {
+      beforeGenListeners.push(
+        eventOn(evtName, () => {
+          store.refreshChatSlots();
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  };
+  registerBeforeGenEvent(tavern_events.GENERATION_AFTER_COMMANDS);
+  registerBeforeGenEvent(tavern_events.GENERATION_STARTED);
+  registerBeforeGenEvent(tavern_events.GENERATE_BEFORE_COMBINE_PROMPTS);
+
+  let promptReadyListener: { stop: () => void } | null = null;
+  try {
+    promptReadyListener = eventOn(tavern_events.CHAT_COMPLETION_PROMPT_READY, (eventData: any) => {
+      store.ensureMemoryInChatCompletion(eventData);
+    });
+  } catch {
+    // ignore
+  }
+
   const cleanup = () => {
     qrBtnListener?.stop();
     chatChangeListener.stop();
+    beforeGenListeners.forEach(l => l.stop());
+    promptReadyListener?.stop();
     parentDoc.removeEventListener('click', onParentQrClick, true);
     app.unmount();
     $container.remove();

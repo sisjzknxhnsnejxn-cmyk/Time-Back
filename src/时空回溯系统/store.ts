@@ -240,38 +240,132 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
     return SLOT_KEYS.filter(k => Boolean(s[k])).length;
   });
 
-  function syncMemoryInjection() {
-    try {
-      const memories = chatData.value.timeloop_memories;
-      uninjectPrompts([PERSISTENT_INJECT_ID]);
+  function buildMemoryPromptContent(): string {
+    const memories = chatData.value.timeloop_memories;
+    if (!memories || memories.length === 0) {
+      return '';
+    }
 
-      if (!memories || memories.length === 0) {
-        return;
-      }
+    const stContext = (window.parent as Window & { SillyTavern?: { getContext?: () => any } })?.SillyTavern?.getContext?.();
+    const charName = stContext?.name2 || SillyTavern?.name2 || '角色';
+    const userName = stContext?.name1 || SillyTavern?.name1 || '主角';
 
-      const charName = SillyTavern?.name2 || '角色';
-      const userName = SillyTavern?.name1 || '主角';
+    const memoryBlocks = memories
+      .map((memory, idx) => `【回溯记忆 #${idx + 1}（${memory.range_label}）】\n${memory.content}`)
+      .join('\n\n');
 
-      const memoryBlocks = memories
-        .map((memory, idx) => `【回溯记忆 #${idx + 1}（${memory.range_label}）】\n${memory.content}`)
-        .join('\n\n');
-
-      injectPrompts([
-        {
-          id: PERSISTENT_INJECT_ID,
-          position: 'in_chat',
-          depth: 2,
-          role: 'system',
-          should_scan: false,
-          content: `<Cross_Timeline_Memory>
+    return `<Cross_Timeline_Memory>
 ${charName} 与 ${userName} 保留以下已被时间回溯抹除的客观事件记录。当前物理世界与其他 NPC 已回到各存档点状态，且不保留这些记录中的经历。
 
 ${memoryBlocks}
-</Cross_Timeline_Memory>`,
-        },
-      ]);
+</Cross_Timeline_Memory>`;
+  }
+
+  function syncMemoryInjection() {
+    try {
+      const promptContent = buildMemoryPromptContent();
+      try {
+        uninjectPrompts([PERSISTENT_INJECT_ID]);
+      } catch {
+        // ignore
+      }
+
+      const parentWin = window.parent as Window & {
+        SillyTavern?: {
+          getContext?: () => {
+            setExtensionPrompt?: (
+              id: string,
+              content: string,
+              position: number,
+              depth: number,
+              scan?: boolean,
+              role?: number,
+            ) => void;
+            extensionPrompts?: Record<string, any>;
+          };
+          setExtensionPrompt?: (
+            id: string,
+            content: string,
+            position: number,
+            depth: number,
+            scan?: boolean,
+            role?: number,
+          ) => void;
+          extensionPrompts?: Record<string, any>;
+        };
+      };
+      const stCtx = parentWin?.SillyTavern?.getContext?.() || parentWin?.SillyTavern || SillyTavern;
+
+      if (!promptContent) {
+        try {
+          stCtx?.setExtensionPrompt?.(PERSISTENT_INJECT_ID, '', 1, 1, true, 0);
+          if (stCtx?.extensionPrompts && PERSISTENT_INJECT_ID in stCtx.extensionPrompts) {
+            delete stCtx.extensionPrompts[PERSISTENT_INJECT_ID];
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      try {
+        injectPrompts([
+          {
+            id: PERSISTENT_INJECT_ID,
+            position: 'in_chat',
+            depth: 1,
+            role: 'system',
+            should_scan: true,
+            content: promptContent,
+          },
+        ]);
+      } catch (err) {
+        console.warn('[TimeLoop] injectPrompts 调用异常，将使用原生 setExtensionPrompt 兜底', err);
+      }
+
+      try {
+        stCtx?.setExtensionPrompt?.(PERSISTENT_INJECT_ID, promptContent, 1, 1, true, 0);
+      } catch (err) {
+        console.warn('[TimeLoop] setExtensionPrompt 调用异常', err);
+      }
     } catch (e) {
       console.warn('[TimeLoop] 同步记忆提示词注入失败', e);
+    }
+  }
+
+  function ensureMemoryInChatCompletion(eventData?: {
+    chat?: Array<{ role: string; content: string; [key: string]: any }>;
+    dryRun?: boolean;
+  }) {
+    try {
+      const activeId = resolveCurrentChatId();
+      if (activeId !== currentChatId.value || chatData.value.timeloop_memories.length === 0) {
+        const reloaded = loadChatArchiveFor(activeId);
+        if (reloaded.timeloop_memories.length > 0 || activeId !== currentChatId.value) {
+          currentChatId.value = activeId;
+          chatData.value = reloaded;
+        }
+      }
+
+      const promptContent = buildMemoryPromptContent();
+      if (!promptContent) return;
+
+      const chatArr = eventData?.chat;
+      if (!Array.isArray(chatArr)) return;
+
+      const alreadyInjected = chatArr.some(
+        msg => typeof msg?.content === 'string' && msg.content.includes('<Cross_Timeline_Memory>'),
+      );
+      if (alreadyInjected) return;
+
+      // 若酒馆预设关闭了扩展提示词或未将 extensionPrompts 编入上下文，则直接插入到倒数第 1 条消息前
+      const insertIndex = Math.max(0, chatArr.length - 1);
+      chatArr.splice(insertIndex, 0, {
+        role: 'system',
+        content: promptContent,
+      });
+    } catch (e) {
+      console.warn('[TimeLoop] CHAT_COMPLETION_PROMPT_READY 兜底注入失败', e);
     }
   }
 
@@ -359,6 +453,11 @@ ${memoryBlocks}
   function updateFloatingBallPosition(side: FloatingBallSide, topPercent: number) {
     settings.value.floating_ball_side = side;
     settings.value.floating_ball_top_percent = Math.min(92, Math.max(5, Math.round(topPercent * 10) / 10));
+  }
+
+  function updateFloatingBallFreePosition(xPercent: number, yPercent: number) {
+    settings.value.floating_ball_x_percent = Math.min(92, Math.max(2, Math.round(xPercent * 10) / 10));
+    settings.value.floating_ball_y_percent = Math.min(92, Math.max(4, Math.round(yPercent * 10) / 10));
   }
 
   function openModal() {
@@ -545,6 +644,7 @@ ${memoryBlocks}
     openModal,
     refreshChatSlots,
     syncMemoryInjection,
+    ensureMemoryInChatCompletion,
     persistSettings,
     persistChatArchive,
     setColorMode,
@@ -552,6 +652,7 @@ ${memoryBlocks}
     setThemeColor,
     setFloatingBallMode,
     updateFloatingBallPosition,
+    updateFloatingBallFreePosition,
     setApiMode,
     selectCustomApiPreset,
     addCustomApiPreset,

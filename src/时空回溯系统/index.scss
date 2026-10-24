@@ -169,7 +169,7 @@
   box-sizing: border-box;
 }
 
-/* 可自由拖拽 & 自动贴边吸附的悬浮球 */
+/* 可自由拖拽到任意位置 & 静止自动半透明虚化的最小化悬浮球 */
 [script_id] .timeloop-minimized-dock {
   position: fixed;
   z-index: 8990;
@@ -188,32 +188,27 @@
   -webkit-user-select: none;
   cursor: grab;
   transition:
-    left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    top 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.24s ease,
-    opacity 0.24s ease;
+    transform 0.22s ease,
+    opacity 0.32s ease,
+    filter 0.32s ease;
 
   &.is-dragging {
     transition: none !important;
     cursor: grabbing;
-    transform: scale(1.05);
+    transform: scale(1.04);
     opacity: 0.96;
+    filter: none;
   }
 
-  &.is-idle.is-side-right {
-    opacity: 0.72;
-    transform: translateX(0.35rem);
+  &.is-idle {
+    opacity: 0.38;
+    filter: blur(0.4px);
   }
 
-  &.is-idle.is-side-left {
-    opacity: 0.72;
-    transform: translateX(-0.35rem);
-  }
-
-  &:hover {
+  &:hover,
+  &:active {
     opacity: 1;
-    transform: translateX(0);
+    filter: none;
   }
 }
 

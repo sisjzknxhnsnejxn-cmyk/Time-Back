@@ -96,6 +96,8 @@ export const ApiSettingsSchema = z
     floating_ball_mode: FloatingBallModeSchema,
     floating_ball_side: FloatingBallSideSchema,
     floating_ball_top_percent: z.number().min(5).max(92).default(72),
+    floating_ball_x_percent: z.number().min(2).max(92).default(78),
+    floating_ball_y_percent: z.number().min(4).max(92).default(76),
   })
   .prefault({});
 

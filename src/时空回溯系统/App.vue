@@ -52,7 +52,6 @@
             </button>
 
             <button
-              v-if="store.settings.floating_ball_mode !== 'off'"
               type="button"
               class="tl-icon-btn"
               title="最小化为悬浮球（查看后方页面或弹窗）"
@@ -140,19 +139,15 @@
       </div>
     </div>
 
-    <!-- 可自由拖拽 & 自动贴边吸附的悬浮球（支持常驻显示 / 仅最小化时显示 / 后台回溯显示） -->
+    <!-- 可自由拖拽移动 & 静止自动半透明虚化的最小化悬浮球 -->
     <div
       v-if="showFloatingBall"
       ref="floatingBallRef"
       class="timeloop-minimized-dock"
-      :class="[
-        `is-side-${store.settings.floating_ball_side}`,
-        {
-          'is-dragging': isBallDragging,
-          'is-idle': isBallIdle && !isBusy && !isBallDragging,
-          'is-compact': !store.isMinimized && !isBusy,
-        },
-      ]"
+      :class="{
+        'is-dragging': isBallDragging,
+        'is-idle': isBallIdle && !isBusy && !isBallDragging,
+      }"
       :style="floatingBallStyle"
       @pointerdown="onBallPointerDown"
       @pointerenter="wakeUpFloatingBall"
@@ -161,23 +156,17 @@
         type="button"
         class="timeloop-minimized-pill"
         :class="{ 'is-busy': isBusy }"
-        :title="isBusy ? '正在回溯总结中 · 点击展开（可按住拖动位置）' : '点击打开时空回溯（可按住自由拖动，松手自动贴边）'"
+        :title="isBusy ? '正在回溯总结中 · 点击展开（可按住自由拖动位置）' : '点击展开时空回溯（可按住自由拖动到任意位置）'"
       >
         <span class="tl-pill-icon" :class="{ 'tl-spin': isBusy }">
           <FlatIcon name="loop" />
         </span>
         <span class="tl-pill-text">
-          {{
-            isBusy
-              ? '正在回溯总结中 · 点击展开'
-              : store.isMinimized
-                ? '时空回溯 · 点击展开'
-                : '时空回溯'
-          }}
+          {{ isBusy ? '正在回溯总结中 · 点击展开' : '时空回溯 · 点击展开' }}
         </span>
       </button>
       <button
-        v-if="store.isMinimized && !isBusy && store.settings.floating_ball_mode === 'minimized_only'"
+        v-if="!isBusy"
         type="button"
         class="timeloop-minimized-close"
         title="关闭时空回溯窗口"
@@ -297,14 +286,9 @@ const ballDragPos = ref<{ x: number; y: number } | null>(null);
 let ballIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
 const showFloatingBall = computed(() => {
-  // 主窗口完整展开时不显示悬浮球
   if (store.isModalOpen && !store.isMinimized) return false;
-  // 后台正在执行回溯总结时强制显示悬浮球，防止找不到任务
   if (isBusy.value) return true;
-  const mode = store.settings.floating_ball_mode;
-  if (mode === 'always') return true;
-  if (mode === 'minimized_only') return store.isModalOpen && store.isMinimized;
-  return false;
+  return store.isModalOpen && store.isMinimized;
 });
 
 const floatingBallStyle = computed<Record<string, string>>(() => {
@@ -316,19 +300,12 @@ const floatingBallStyle = computed<Record<string, string>>(() => {
       bottom: 'auto',
     };
   }
-  const topPct = Math.min(92, Math.max(5, store.settings.floating_ball_top_percent ?? 72));
-  if (store.settings.floating_ball_side === 'left') {
-    return {
-      left: 'max(0.65rem, env(safe-area-inset-left, 0.65rem))',
-      right: 'auto',
-      top: `${topPct}vh`,
-      bottom: 'auto',
-    };
-  }
+  const xPct = Math.min(92, Math.max(2, store.settings.floating_ball_x_percent ?? 78));
+  const yPct = Math.min(92, Math.max(4, store.settings.floating_ball_y_percent ?? 76));
   return {
-    right: 'max(0.65rem, env(safe-area-inset-right, 0.65rem))',
-    left: 'auto',
-    top: `${topPct}vh`,
+    left: `${xPct}vw`,
+    top: `${yPct}vh`,
+    right: 'auto',
     bottom: 'auto',
   };
 });
@@ -338,7 +315,7 @@ function scheduleBallIdle() {
   isBallIdle.value = false;
   ballIdleTimer = setTimeout(() => {
     isBallIdle.value = true;
-  }, 3500);
+  }, 2200);
 }
 
 function wakeUpFloatingBall() {
@@ -361,7 +338,7 @@ function onBallPointerDown(e: PointerEvent) {
   const startY = e.clientY;
   const startLeft = rect.left;
   const startTop = rect.top;
-  const width = rect.width || 110;
+  const width = rect.width || 140;
   const height = rect.height || 40;
   let moved = false;
 
@@ -407,11 +384,10 @@ function onBallPointerDown(e: PointerEvent) {
     const vw = Math.max(viewWin.innerWidth || 360, 200);
     const vh = Math.max(viewWin.innerHeight || 640, 200);
     const finalPos = ballDragPos.value || { x: startLeft, y: startTop };
-    const centerX = finalPos.x + width / 2;
-    const side = centerX < vw / 2 ? 'left' : 'right';
-    const topPercent = (finalPos.y / vh) * 100;
+    const xPercent = (finalPos.x / vw) * 100;
+    const yPercent = (finalPos.y / vh) * 100;
 
-    store.updateFloatingBallPosition(side, topPercent);
+    store.updateFloatingBallFreePosition(xPercent, yPercent);
     isBallDragging.value = false;
     ballDragPos.value = null;
     scheduleBallIdle();
@@ -765,6 +741,9 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
         // ignore
       }
     }
+
+    // 外部插件恢复完成后再次同步记忆注入，防止外部插件刷新时冲掉回溯记忆
+    store.syncMemoryInjection();
 
     uninjectPrompts(['timeloop_rewind_notice']);
     injectPrompts(
