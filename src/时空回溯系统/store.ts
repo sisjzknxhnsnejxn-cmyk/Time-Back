@@ -6,6 +6,7 @@ import {
   ChatArchiveDataSchema,
   DEFAULT_SUMMARY_SYSTEM_PROMPT,
   DEFAULT_SUMMARY_USER_PROMPT,
+  SLOT_KEYS,
   type ApiMode,
   type ApiSettings,
   type ChatArchiveData,
@@ -33,6 +34,7 @@ function generateUuid(): string {
 export {
   DEFAULT_SUMMARY_SYSTEM_PROMPT,
   DEFAULT_SUMMARY_USER_PROMPT,
+  SLOT_KEYS,
   type ApiMode,
   type ApiSettings,
   type ChatArchiveData,
@@ -229,7 +231,7 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
 
   const occupiedSlotCount = computed(() => {
     const s = chatData.value.timeloop_slots;
-    return [s.slot_1, s.slot_2, s.slot_3].filter(Boolean).length;
+    return SLOT_KEYS.filter(k => Boolean(s[k])).length;
   });
 
   function syncMemoryInjection() {
@@ -432,15 +434,14 @@ ${memoryBlocks}
   }
 
   function compactSlots() {
-    const orderedKeys: SlotKey[] = ['slot_1', 'slot_2', 'slot_3'];
-    const nonNullSlots = orderedKeys
-      .map(k => chatData.value.timeloop_slots[k])
-      .filter((s): s is SlotItem => Boolean(s));
+    const nonNullSlots = SLOT_KEYS.map(k => chatData.value.timeloop_slots[k]).filter((s): s is SlotItem => Boolean(s));
 
     chatData.value.timeloop_slots = {
       slot_1: nonNullSlots[0] ?? null,
       slot_2: nonNullSlots[1] ?? null,
       slot_3: nonNullSlots[2] ?? null,
+      slot_4: nonNullSlots[3] ?? null,
+      slot_5: nonNullSlots[4] ?? null,
     };
   }
 
@@ -494,6 +495,8 @@ ${memoryBlocks}
       slot_1: null,
       slot_2: null,
       slot_3: null,
+      slot_4: null,
+      slot_5: null,
     };
     chatData.value.timeloop_memories = [];
     latestMemoryId.value = null;
@@ -524,6 +527,7 @@ ${memoryBlocks}
     duplicateCustomApiPreset,
     removeCustomApiPreset,
     syncActivePresetToLegacyFields,
+    compactSlots,
     clearSlot,
     updateMemory,
     addMemory,

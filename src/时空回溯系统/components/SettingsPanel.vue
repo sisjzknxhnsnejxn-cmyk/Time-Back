@@ -72,17 +72,6 @@
         <div class="tl-api-hint">
           直接使用酒馆当前主聊天连接的 AI 接口与模型生成回溯总结，省心免配置。
         </div>
-        <div class="tl-api-action-bar">
-          <button
-            type="button"
-            class="tl-btn tl-btn-secondary tl-btn-sm"
-            :disabled="isTestingApi"
-            @click="handleTestCurrentApi"
-          >
-            <FlatIcon name="bolt" />
-            <span>{{ isTestingApi ? '正在测试...' : '测试主聊天 AI 连接' }}</span>
-          </button>
-        </div>
       </div>
 
       <!-- 模式 2：自定义 API（支持多个配置管理、自定义命名、流式/非流式切换与测试） -->
@@ -122,7 +111,6 @@
               <span>复制</span>
             </button>
             <button
-              v-if="store.settings.custom_api_presets.length > 1"
               type="button"
               class="tl-btn tl-btn-danger-ghost tl-btn-sm"
               title="删除当前 API 配置"
@@ -240,9 +228,9 @@
         </div>
       </div>
 
-      <!-- API 测试结果展示条 -->
+      <!-- API 测试结果展示条（仅自定义副 API 显示） -->
       <div
-        v-if="apiTestResult"
+        v-if="store.settings.api_mode === 'custom_api' && apiTestResult"
         class="tl-api-test-banner"
         :class="apiTestResult.ok ? 'is-success' : 'is-error'"
       >
@@ -525,10 +513,11 @@ function handleDeleteCustomPreset() {
     return;
   }
   confirmDeletePreset.value = false;
-  const removedName = store.activeCustomPreset.name;
+  const removedName = store.activeCustomPreset.name || '未命名 API';
+  const isSinglePreset = store.settings.custom_api_presets.length <= 1;
   store.removeCustomApiPreset(store.activeCustomPreset.id);
   apiTestResult.value = null;
-  toastr.info(`已删除配置「${removedName}」`);
+  toastr.info(isSinglePreset ? `已删除并重置「${removedName}」为默认配置` : `已删除配置「${removedName}」`);
 }
 
 function onManualModelInput() {
@@ -596,68 +585,25 @@ const fetchModels = errorCatched(async () => {
 });
 
 const handleTestCurrentApi = errorCatched(async () => {
+  if (store.settings.api_mode !== 'custom_api') return;
   isTestingApi.value = true;
   apiTestResult.value = null;
-  const startTime = Date.now();
 
   try {
-    const mode = store.settings.api_mode;
-    if (mode === 'custom_api') {
-      const cur = store.activeCustomPreset;
-      cur.api_url = normalizeOpenAiBaseUrl(cur.api_url);
-      store.syncActivePresetToLegacyFields();
-      const res = await testCustomApiConnection({
-        apiUrl: cur.api_url,
-        apiKey: cur.api_key,
-        model: cur.model,
-        stream: Boolean(cur.stream),
-      });
-      apiTestResult.value = res;
-      if (res.ok) {
-        toastr.success(`「${cur.name}」测试成功 (${res.latencyMs}ms)`);
-      } else {
-        toastr.error(`「${cur.name}」测试失败：${res.error}`);
-      }
-      return;
-    }
-
-    try {
-      const testPrompt = '请仅回复“连接正常”四个字。';
-      const rawRes = await generateRaw({
-        user_input: testPrompt,
-        ordered_prompts: [{ role: 'user', content: testPrompt }],
-      });
-      const latencyMs = Date.now() - startTime;
-      const text = (typeof rawRes === 'string' ? rawRes : rawRes?.content || '').trim();
-      if (!text) {
-        apiTestResult.value = {
-          ok: false,
-          latencyMs,
-          reply: '',
-          channelLabel: '酒馆主聊天 AI',
-          error: '主聊天 AI 未返回有效内容，请检查酒馆主 API 是否已连接',
-        };
-        toastr.error('酒馆主聊天 AI 未返回有效内容');
-        return;
-      }
-      apiTestResult.value = {
-        ok: true,
-        latencyMs,
-        reply: text.slice(0, 80),
-        channelLabel: '酒馆主聊天 AI',
-      };
-      toastr.success(`酒馆主聊天 AI 测试成功 (${latencyMs}ms)`);
-    } catch (err) {
-      const latencyMs = Date.now() - startTime;
-      const msg = err instanceof Error ? err.message : '主聊天 AI 调用失败';
-      apiTestResult.value = {
-        ok: false,
-        latencyMs,
-        reply: '',
-        channelLabel: '酒馆主聊天 AI',
-        error: msg,
-      };
-      toastr.error(msg);
+    const cur = store.activeCustomPreset;
+    cur.api_url = normalizeOpenAiBaseUrl(cur.api_url);
+    store.syncActivePresetToLegacyFields();
+    const res = await testCustomApiConnection({
+      apiUrl: cur.api_url,
+      apiKey: cur.api_key,
+      model: cur.model,
+      stream: Boolean(cur.stream),
+    });
+    apiTestResult.value = res;
+    if (res.ok) {
+      toastr.success(`「${cur.name}」测试成功 (${res.latencyMs}ms)`);
+    } else {
+      toastr.error(`「${cur.name}」测试失败：${res.error}`);
     }
   } finally {
     isTestingApi.value = false;

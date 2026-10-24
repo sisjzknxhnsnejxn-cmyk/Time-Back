@@ -682,7 +682,7 @@ export async function callCustomOpenAiApi(options: CallCustomApiOptions): Promis
   } catch (directErr) {
     // 浏览器 CORS 拦截时回退至酒馆后端转发
     try {
-      const rawRes = await generateRaw({
+      const rawRes: unknown = await generateRaw({
         user_input: options.userPrompt,
         custom_api: {
           apiurl: url,
@@ -692,7 +692,7 @@ export async function callCustomOpenAiApi(options: CallCustomApiOptions): Promis
         },
         ordered_prompts: messages,
       });
-      return (typeof rawRes === 'string' ? rawRes : rawRes?.content || '').trim();
+      return (typeof rawRes === 'string' ? rawRes : (rawRes as { content?: string })?.content || '').trim();
     } catch {
       throw directErr instanceof Error ? directErr : new Error('调用自定义 API 失败');
     }

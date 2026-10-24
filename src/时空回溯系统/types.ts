@@ -100,16 +100,18 @@ export const SlotItemSchema = z.object({
   mvu_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 
+export const SLOT_KEYS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5'] as const;
+export type SlotKey = (typeof SLOT_KEYS)[number];
+
 export const LoopMemoryItemSchema = z.object({
   id: z.string(),
   range_label: z.string(),
   content: z.string(),
   timestamp: z.string(),
-  anchor_key: z.enum(['slot_1', 'slot_2', 'slot_3']).optional(),
+  anchor_key: z.enum(SLOT_KEYS).optional(),
   anchor_floor: z.number().int().nonnegative().optional(),
 });
 
-export type SlotKey = 'slot_1' | 'slot_2' | 'slot_3';
 export type SlotItem = z.infer<typeof SlotItemSchema>;
 export type LoopMemoryItem = z.infer<typeof LoopMemoryItemSchema>;
 export type ApiSettings = z.infer<typeof ApiSettingsSchema>;
@@ -119,6 +121,8 @@ export const SlotsSchema = z
     slot_1: SlotItemSchema.nullable().default(null),
     slot_2: SlotItemSchema.nullable().default(null),
     slot_3: SlotItemSchema.nullable().default(null),
+    slot_4: SlotItemSchema.nullable().default(null),
+    slot_5: SlotItemSchema.nullable().default(null),
   })
   .prefault({});
 

@@ -1115,8 +1115,11 @@
 
 [script_id] .tl-custom-preset-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.65rem;
   padding-bottom: 0.6rem;
   border-bottom: 1px dashed var(--tl-border);
 }
@@ -1126,6 +1129,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 [script_id] .tl-preset-pill {
@@ -1141,6 +1146,7 @@
   font-size: 0.84rem;
   font-weight: 500;
   cursor: pointer;
+  max-width: 100%;
   transition:
     border-color 0.12s ease,
     background-color 0.12s ease,
@@ -1152,6 +1158,13 @@
     color: var(--tl-accent);
     font-weight: 600;
   }
+}
+
+[script_id] .tl-preset-pill-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
 }
 
 [script_id] .tl-preset-pill-model {
@@ -1171,6 +1184,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.4rem;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 [script_id] .tl-model-manual-input {
@@ -1439,6 +1454,18 @@
 
   [script_id] .tl-setting-row {
     gap: 0.55rem;
+  }
+
+  [script_id] .tl-custom-preset-header {
+    align-items: flex-start;
+  }
+
+  [script_id] .tl-preset-tabs {
+    flex: 1 1 100%;
+  }
+
+  [script_id] .tl-preset-actions {
+    width: 100%;
   }
 
   [script_id] .tl-help-backdrop {

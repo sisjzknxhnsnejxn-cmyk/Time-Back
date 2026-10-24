@@ -167,7 +167,7 @@ const busySlotKey = ref<SlotKey | null>(null);
 const justSavedSlotKey = ref<SlotKey | null>(null);
 const showFallbackQrBtn = ref(false);
 const qrBarEl = ref<Element | null>(null);
-const slotKeys: SlotKey[] = ['slot_1', 'slot_2', 'slot_3'];
+const slotKeys: SlotKey[] = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5'];
 
 let unregisterHorae: Array<() => void> = [];
 let qrCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -183,7 +183,7 @@ const tabs = computed<Array<{ id: TabId; label: string; icon: FlatIconName; badg
     id: 'slots',
     label: '时间锚点',
     icon: 'anchor',
-    badge: `${store.occupiedSlotCount}/3`,
+    badge: `${store.occupiedSlotCount}/5`,
   },
   {
     id: 'memories',
@@ -375,14 +375,14 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
       });
     }
 
-    const result = await generateRaw({
+    const result: unknown = await generateRaw({
       user_input: usrPrompt,
       ordered_prompts: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: usrPrompt },
       ],
     });
-    return (typeof result === 'string' ? result : result?.content || '').trim();
+    return (typeof result === 'string' ? result : (result as { content?: string })?.content || '').trim();
   }
 
   isBusy.value = true;

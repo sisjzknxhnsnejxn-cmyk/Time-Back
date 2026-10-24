@@ -84,7 +84,7 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
-import type { LoopMemoryItem, SlotItem, SlotKey } from '../types';
+import { SLOT_KEYS, type LoopMemoryItem, type SlotItem, type SlotKey } from '../types';
 import FlatIcon from './FlatIcon.vue';
 
 const props = defineProps<{
@@ -106,20 +106,19 @@ const confirmClearKey = ref<SlotKey | null>(null);
 let clearConfirmTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * 渐进式显示槽位：
- * - 默认只显示 锚点 01
- * - 当 锚点 01 存档后，自动显示 锚点 02
- * - 当 锚点 02 存档后，自动显示 锚点 03
+ * 渐进式显示槽位（最多 5 个槽位）：
+ * - 默认显示 锚点 01
+ * - 每当当前已解锁槽位存档后（或后续槽位已有数据），自动解锁下一个槽位，直至锚点 05
  */
 const visibleSlotKeys = computed<SlotKey[]>(() => {
-  const list: SlotKey[] = ['slot_1'];
-  if (props.slots.slot_1 || props.slots.slot_2 || props.slots.slot_3) {
-    list.push('slot_2');
+  let highestOccupiedIndex = -1;
+  for (let i = 0; i < SLOT_KEYS.length; i++) {
+    if (props.slots[SLOT_KEYS[i]]) {
+      highestOccupiedIndex = i;
+    }
   }
-  if ((props.slots.slot_1 && props.slots.slot_2) || props.slots.slot_3) {
-    list.push('slot_3');
-  }
-  return list;
+  const visibleCount = Math.min(SLOT_KEYS.length, Math.max(1, highestOccupiedIndex + 2));
+  return SLOT_KEYS.slice(0, visibleCount);
 });
 
 function getLinkedMemoryCount(key: SlotKey, floor: number): number {
