@@ -48,35 +48,168 @@
     <div class="tl-setting-card">
       <div class="tl-card-title">总结所用 AI 接口</div>
 
-      <label class="tl-check-row">
-        <input v-model="store.settings.use_main_api" type="checkbox" />
-        <span>使用酒馆当前主聊天 AI（省心推荐）</span>
-      </label>
-
-      <label v-if="!store.settings.use_main_api && hasDatabaseAi" class="tl-check-row">
-        <input v-model="store.settings.use_database_ai" type="checkbox" />
-        <span>使用「记忆表格」插件配置的 AI 接口</span>
-      </label>
-
-      <div v-if="!store.settings.use_main_api && store.settings.use_database_ai && hasDatabaseAi" class="tl-field">
-        <label class="tl-label">指定记忆表格 AI 预设名（留空默认）</label>
-        <input v-model="store.settings.database_ai_preset" type="text" class="tl-input" placeholder="默认预设" />
+      <div class="tl-seg-group">
+        <button
+          type="button"
+          class="tl-seg-btn"
+          :class="{ active: store.settings.api_mode === 'main_api' }"
+          @click="handleSelectApiMode('main_api')"
+        >
+          酒馆主聊天 AI
+        </button>
+        <button
+          type="button"
+          class="tl-seg-btn"
+          :class="{ active: store.settings.api_mode === 'custom_api' }"
+          @click="handleSelectApiMode('custom_api')"
+        >
+          自定义 API ({{ store.settings.custom_api_presets.length }})
+        </button>
       </div>
 
-      <template v-if="!store.settings.use_main_api && (!store.settings.use_database_ai || !hasDatabaseAi)">
+      <!-- 模式 1：酒馆主聊天 AI -->
+      <div v-if="store.settings.api_mode === 'main_api'" class="tl-api-mode-box">
+        <div class="tl-api-hint">
+          直接使用酒馆当前主聊天连接的 AI 接口与模型生成回溯总结，省心免配置。
+        </div>
+        <div class="tl-api-action-bar">
+          <button
+            type="button"
+            class="tl-btn tl-btn-secondary tl-btn-sm"
+            :disabled="isTestingApi"
+            @click="handleTestCurrentApi"
+          >
+            <FlatIcon name="bolt" />
+            <span>{{ isTestingApi ? '正在测试...' : '测试主聊天 AI 连接' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 模式 2：自定义 API（支持多个配置管理、自定义命名、流式/非流式切换与测试） -->
+      <div v-else class="tl-api-mode-box">
+        <div class="tl-custom-preset-header">
+          <div class="tl-preset-tabs">
+            <button
+              v-for="preset in store.settings.custom_api_presets"
+              :key="preset.id"
+              type="button"
+              class="tl-preset-pill"
+              :class="{ active: preset.id === store.activeCustomPreset.id }"
+              @click="handleSwitchCustomPreset(preset.id)"
+            >
+              <span class="tl-preset-pill-name">{{ preset.name || '未命名 API' }}</span>
+              <span v-if="preset.model" class="tl-preset-pill-model">{{ preset.model }}</span>
+            </button>
+          </div>
+
+          <div class="tl-preset-actions">
+            <button
+              type="button"
+              class="tl-btn tl-btn-secondary tl-btn-sm"
+              title="新增一个自定义 API 配置"
+              @click="handleAddCustomPreset"
+            >
+              <FlatIcon name="plus" />
+              <span>新增 API</span>
+            </button>
+            <button
+              type="button"
+              class="tl-btn tl-btn-ghost tl-btn-sm"
+              title="复制当前 API 配置"
+              @click="handleDuplicateCustomPreset"
+            >
+              <FlatIcon name="copy" />
+              <span>复制</span>
+            </button>
+            <button
+              v-if="store.settings.custom_api_presets.length > 1"
+              type="button"
+              class="tl-btn tl-btn-danger-ghost tl-btn-sm"
+              title="删除当前 API 配置"
+              @click="handleDeleteCustomPreset"
+            >
+              <FlatIcon name="trash" />
+              <span>{{ confirmDeletePreset ? '确认删除？' : '删除' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="tl-field">
+          <label class="tl-label">自定义配置名称（修改后实时更新上方标签）</label>
+          <input
+            v-model="store.activeCustomPreset.name"
+            type="text"
+            class="tl-input"
+            placeholder="例如：DeepSeek 主力 / OpenAI / 硅基流动"
+            @input="store.syncActivePresetToLegacyFields()"
+          />
+        </div>
+
+        <div class="tl-setting-row">
+          <span class="tl-row-label">请求传输方式</span>
+          <div class="tl-seg-group">
+            <button
+              type="button"
+              class="tl-seg-btn"
+              :class="{ active: !store.activeCustomPreset.stream }"
+              @click="handleSetStreamMode(false)"
+            >
+              非流式 (JSON)
+            </button>
+            <button
+              type="button"
+              class="tl-seg-btn"
+              :class="{ active: Boolean(store.activeCustomPreset.stream) }"
+              @click="handleSetStreamMode(true)"
+            >
+              流式传输 (Stream)
+            </button>
+          </div>
+        </div>
+
         <div class="tl-field">
           <label class="tl-label">API 地址 (OpenAI 兼容)</label>
-          <input v-model="store.settings.api_url" type="text" class="tl-input" placeholder="https://api.openai.com/v1" />
+          <input
+            v-model="store.activeCustomPreset.api_url"
+            type="text"
+            class="tl-input"
+            placeholder="https://api.openai.com/v1"
+            @input="store.syncActivePresetToLegacyFields()"
+          />
         </div>
+
         <div class="tl-field">
           <label class="tl-label">API 密钥 (Key)</label>
-          <input v-model="store.settings.api_key" type="password" class="tl-input" placeholder="sk-..." />
-        </div>
-        <div class="tl-field">
-          <label class="tl-label">模型名称</label>
           <div class="tl-input-group">
-            <select v-model="store.settings.model" class="tl-select">
-              <option v-for="m in store.settings.model_list" :key="m" :value="m">{{ m }}</option>
+            <input
+              v-model="store.activeCustomPreset.api_key"
+              :type="showApiKey ? 'text' : 'password'"
+              class="tl-input"
+              placeholder="sk-..."
+              @input="store.syncActivePresetToLegacyFields()"
+            />
+            <button
+              type="button"
+              class="tl-btn tl-btn-ghost tl-btn-sm"
+              @click="showApiKey = !showApiKey"
+            >
+              {{ showApiKey ? '隐藏' : '显示' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="tl-field">
+          <label class="tl-label">
+            模型名称（可拉取列表选择或直接手填，共 {{ store.activeCustomPreset.model_list.length }} 个可选）
+          </label>
+          <div class="tl-input-group">
+            <select
+              v-if="store.activeCustomPreset.model_list.length > 0"
+              v-model="store.activeCustomPreset.model"
+              class="tl-select"
+              @change="store.syncActivePresetToLegacyFields()"
+            >
+              <option v-for="m in store.activeCustomPreset.model_list" :key="m" :value="m">{{ m }}</option>
             </select>
             <button
               type="button"
@@ -84,11 +217,48 @@
               :disabled="isFetchingModels"
               @click="fetchModels"
             >
-              {{ isFetchingModels ? '获取中...' : '拉取列表' }}
+              <FlatIcon name="refresh" />
+              <span>{{ isFetchingModels ? '拉取中...' : '拉取列表' }}</span>
+            </button>
+            <button
+              type="button"
+              class="tl-btn tl-btn-primary tl-btn-sm"
+              :disabled="isTestingApi"
+              @click="handleTestCurrentApi"
+            >
+              <FlatIcon name="bolt" />
+              <span>{{ isTestingApi ? '测试中...' : '测试 API' }}</span>
             </button>
           </div>
+          <input
+            v-model="store.activeCustomPreset.model"
+            type="text"
+            class="tl-input tl-model-manual-input"
+            placeholder="也可在此直接手动输入模型名，如 deepseek-chat / gpt-4o-mini"
+            @input="onManualModelInput"
+          />
         </div>
-      </template>
+      </div>
+
+      <!-- API 测试结果展示条 -->
+      <div
+        v-if="apiTestResult"
+        class="tl-api-test-banner"
+        :class="apiTestResult.ok ? 'is-success' : 'is-error'"
+      >
+        <div class="tl-test-banner-head">
+          <strong>
+            {{ apiTestResult.ok ? '✓ 接口测试成功' : '✕ 接口测试失败' }}
+          </strong>
+          <span class="tl-test-meta">
+            {{ apiTestResult.channelLabel }}
+            <template v-if="apiTestResult.latencyMs > 0"> · {{ apiTestResult.latencyMs }}ms</template>
+          </span>
+        </div>
+        <div class="tl-test-banner-body">
+          {{ apiTestResult.ok ? `AI 响应：${apiTestResult.reply}` : `原因：${apiTestResult.error}` }}
+        </div>
+      </div>
     </div>
 
     <div class="tl-setting-card">
@@ -121,14 +291,104 @@
         </button>
       </div>
 
-      <div class="tl-setting-row">
+      <div class="tl-setting-row tl-word-limit-row">
         <span class="tl-row-label">总结字数范围</span>
-        <input
-          v-model="store.settings.summary_word_limit"
-          type="text"
-          class="tl-input tl-input-compact"
-          placeholder="180-320"
-        />
+        <div class="tl-word-limit-controls">
+          <div class="tl-word-quick-pills">
+            <button
+              v-for="range in wordRangePresets"
+              :key="range"
+              type="button"
+              class="tl-word-pill"
+              :class="{ active: store.settings.summary_word_limit === range }"
+              @click="store.settings.summary_word_limit = range"
+            >
+              {{ range }}
+            </button>
+          </div>
+          <input
+            v-model="store.settings.summary_word_limit"
+            type="text"
+            class="tl-input tl-input-compact"
+            placeholder="300-800"
+          />
+        </div>
+      </div>
+
+      <div class="tl-setting-row tl-word-limit-row">
+        <span class="tl-row-label">单次总结最大字数（超出自动分批提炼并合并）</span>
+        <div class="tl-word-limit-controls">
+          <div class="tl-word-quick-pills">
+            <button
+              v-for="limit in chunkLimitPresets"
+              :key="limit"
+              type="button"
+              class="tl-word-pill"
+              :class="{ active: Number(store.settings.max_chunk_chars) === limit }"
+              @click="store.settings.max_chunk_chars = limit"
+            >
+              {{ limit }}
+            </button>
+          </div>
+          <input
+            v-model.number="store.settings.max_chunk_chars"
+            type="number"
+            min="1000"
+            step="1000"
+            class="tl-input tl-input-compact"
+            placeholder="32000"
+          />
+        </div>
+      </div>
+
+      <div class="tl-field">
+        <label class="tl-label">标签过滤与正文提取（默认过滤 &lt;think&gt;、&lt;thinking&gt; 思维链）</label>
+        <div class="tl-seg-group tl-seg-triple">
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.tag_filter_mode === 'strip' }"
+            @click="store.settings.tag_filter_mode = 'strip'"
+          >
+            剔除指定标签
+          </button>
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.tag_filter_mode === 'extract' }"
+            @click="store.settings.tag_filter_mode = 'extract'"
+          >
+            仅提取标签内正文
+          </button>
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.tag_filter_mode === 'off' }"
+            @click="store.settings.tag_filter_mode = 'off'"
+          >
+            关闭标签过滤
+          </button>
+        </div>
+
+        <div v-if="store.settings.tag_filter_mode !== 'off'" class="tl-input-group" style="margin-top: 8px">
+          <input
+            v-model="store.settings.custom_filter_tags"
+            type="text"
+            class="tl-input"
+            :placeholder="
+              store.settings.tag_filter_mode === 'extract'
+                ? '输入要提取的正文标签名，多个用逗号分隔，例如：content, 正文, story'
+                : '输入要剔除的标签名，多个用逗号分隔，例如：think, thinking'
+            "
+          />
+          <button
+            type="button"
+            class="tl-btn tl-btn-ghost tl-btn-sm"
+            @click="store.settings.custom_filter_tags = 'think, thinking'"
+          >
+            恢复默认标签
+          </button>
+        </div>
       </div>
 
       <div class="tl-setting-row">
@@ -184,17 +444,31 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
-import { getDatabaseApi, normalizeOpenAiBaseUrl } from '../plugins';
+import {
+  fetchOpenAiModels,
+  normalizeOpenAiBaseUrl,
+  testCustomApiConnection,
+  type ApiTestResult,
+} from '../plugins';
 import { useTimeLoopStore } from '../store';
-import type { ThemeColor } from '../types';
+import type { ApiMode, ThemeColor } from '../types';
 import FlatIcon from './FlatIcon.vue';
 
 const store = useTimeLoopStore();
 
 const showPromptEditor = ref(false);
+const showApiKey = ref(false);
 const isFetchingModels = ref(false);
+const isTestingApi = ref(false);
+const apiTestResult = ref<ApiTestResult | null>(null);
 const confirmResetArchive = ref(false);
+const confirmDeletePreset = ref(false);
+
 let resetArchiveTimer: ReturnType<typeof setTimeout> | null = null;
+let deletePresetTimer: ReturnType<typeof setTimeout> | null = null;
+
+const wordRangePresets = ['300-500', '300-800', '500-800', '600-1000'];
+const chunkLimitPresets = [16000, 32000, 64000];
 
 const themeOptions: Array<{ id: ThemeColor; label: string; pillClass: string }> = [
   { id: 'amber', label: '琥珀', pillClass: 'pill-amber' },
@@ -203,16 +477,72 @@ const themeOptions: Array<{ id: ThemeColor; label: string; pillClass: string }> 
   { id: 'emerald', label: '翠绿', pillClass: 'pill-emerald' },
 ];
 
-const hasDatabaseAi = computed(() => Boolean(getDatabaseApi()?.callAI));
-
 const shortChatId = computed(() => {
   const id = store.currentChatId || '未绑定';
   return id.length > 22 ? `${id.slice(0, 10)}...${id.slice(-8)}` : id;
 });
 
+function handleSelectApiMode(mode: ApiMode) {
+  store.setApiMode(mode);
+  apiTestResult.value = null;
+}
+
+function handleSetStreamMode(stream: boolean) {
+  store.activeCustomPreset.stream = stream;
+  store.settings.stream = stream;
+  store.syncActivePresetToLegacyFields();
+}
+
+function handleSwitchCustomPreset(id: string) {
+  confirmDeletePreset.value = false;
+  apiTestResult.value = null;
+  store.selectCustomApiPreset(id);
+}
+
+function handleAddCustomPreset() {
+  confirmDeletePreset.value = false;
+  apiTestResult.value = null;
+  const created = store.addCustomApiPreset();
+  toastr.success(`已新增「${created.name}」`);
+}
+
+function handleDuplicateCustomPreset() {
+  confirmDeletePreset.value = false;
+  apiTestResult.value = null;
+  const dup = store.duplicateCustomApiPreset(store.activeCustomPreset.id);
+  if (dup) {
+    toastr.success(`已复制「${dup.name}」`);
+  }
+}
+
+function handleDeleteCustomPreset() {
+  if (!confirmDeletePreset.value) {
+    confirmDeletePreset.value = true;
+    if (deletePresetTimer) clearTimeout(deletePresetTimer);
+    deletePresetTimer = setTimeout(() => {
+      confirmDeletePreset.value = false;
+    }, 2500);
+    return;
+  }
+  confirmDeletePreset.value = false;
+  const removedName = store.activeCustomPreset.name;
+  store.removeCustomApiPreset(store.activeCustomPreset.id);
+  apiTestResult.value = null;
+  toastr.info(`已删除配置「${removedName}」`);
+}
+
+function onManualModelInput() {
+  const cur = store.activeCustomPreset;
+  const trimmed = cur.model.trim();
+  if (trimmed && !cur.model_list.includes(trimmed)) {
+    cur.model_list = [trimmed, ...cur.model_list];
+  }
+  store.syncActivePresetToLegacyFields();
+}
+
 function handleResetPrompts() {
   store.resetSummaryPrompts();
-  toastr.success('已恢复默认提示词');
+  toastr.success('已恢复默认提示词（300-800字）');
 }
 
 function handleReloadArchive() {
@@ -235,39 +565,108 @@ function handleResetArchive() {
 }
 
 const fetchModels = errorCatched(async () => {
-  const url = normalizeOpenAiBaseUrl(store.settings.api_url);
-  const key = store.settings.api_key.trim();
-  if (!url || !key) {
-    toastr.warning('请先填写 API 地址和密钥');
+  const cur = store.activeCustomPreset;
+  const url = normalizeOpenAiBaseUrl(cur.api_url);
+  const key = cur.api_key.trim();
+  if (!url) {
+    toastr.warning('请先填写 API 地址');
     return;
   }
-  store.settings.api_url = url;
+  cur.api_url = url;
+  store.syncActivePresetToLegacyFields();
   isFetchingModels.value = true;
   try {
-    const res = await fetch(`${url}/models`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const models = Array.isArray(data?.data)
-      ? data.data.map((x: { id?: string }) => x?.id).filter((x: unknown): x is string => Boolean(x))
-      : [];
+    const models = await fetchOpenAiModels(url, key);
     if (!models.length) {
-      toastr.warning('未获取到可用模型');
+      toastr.warning('接口返回列表为空，请手动输入模型名称');
       return;
     }
-    store.settings.model_list = models;
-    if (!models.includes(store.settings.model)) {
-      store.settings.model = models[0];
+    cur.model_list = models;
+    if (!models.includes(cur.model)) {
+      cur.model = models[0];
     }
-    toastr.success(`已获取 ${models.length} 个模型`);
+    store.syncActivePresetToLegacyFields();
+    toastr.success(`已为「${cur.name}」获取 ${models.length} 个模型`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '拉取失败';
+    toastr.error(`拉取模型列表失败（${msg}），你也可以直接在下方手动输入模型名`);
   } finally {
     isFetchingModels.value = false;
   }
 });
 
+const handleTestCurrentApi = errorCatched(async () => {
+  isTestingApi.value = true;
+  apiTestResult.value = null;
+  const startTime = Date.now();
+
+  try {
+    const mode = store.settings.api_mode;
+    if (mode === 'custom_api') {
+      const cur = store.activeCustomPreset;
+      cur.api_url = normalizeOpenAiBaseUrl(cur.api_url);
+      store.syncActivePresetToLegacyFields();
+      const res = await testCustomApiConnection({
+        apiUrl: cur.api_url,
+        apiKey: cur.api_key,
+        model: cur.model,
+        stream: Boolean(cur.stream),
+      });
+      apiTestResult.value = res;
+      if (res.ok) {
+        toastr.success(`「${cur.name}」测试成功 (${res.latencyMs}ms)`);
+      } else {
+        toastr.error(`「${cur.name}」测试失败：${res.error}`);
+      }
+      return;
+    }
+
+    try {
+      const testPrompt = '请仅回复“连接正常”四个字。';
+      const rawRes = await generateRaw({
+        user_input: testPrompt,
+        ordered_prompts: [{ role: 'user', content: testPrompt }],
+      });
+      const latencyMs = Date.now() - startTime;
+      const text = (typeof rawRes === 'string' ? rawRes : rawRes?.content || '').trim();
+      if (!text) {
+        apiTestResult.value = {
+          ok: false,
+          latencyMs,
+          reply: '',
+          channelLabel: '酒馆主聊天 AI',
+          error: '主聊天 AI 未返回有效内容，请检查酒馆主 API 是否已连接',
+        };
+        toastr.error('酒馆主聊天 AI 未返回有效内容');
+        return;
+      }
+      apiTestResult.value = {
+        ok: true,
+        latencyMs,
+        reply: text.slice(0, 80),
+        channelLabel: '酒馆主聊天 AI',
+      };
+      toastr.success(`酒馆主聊天 AI 测试成功 (${latencyMs}ms)`);
+    } catch (err) {
+      const latencyMs = Date.now() - startTime;
+      const msg = err instanceof Error ? err.message : '主聊天 AI 调用失败';
+      apiTestResult.value = {
+        ok: false,
+        latencyMs,
+        reply: '',
+        channelLabel: '酒馆主聊天 AI',
+        error: msg,
+      };
+      toastr.error(msg);
+    }
+  } finally {
+    isTestingApi.value = false;
+  }
+});
+
 onUnmounted(() => {
   if (resetArchiveTimer) clearTimeout(resetArchiveTimer);
+  if (deletePresetTimer) clearTimeout(deletePresetTimer);
 });
 </script>
 

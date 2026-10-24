@@ -139,6 +139,7 @@ import MemoriesPanel from './components/MemoriesPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import SlotsPanel from './components/SlotsPanel.vue';
 import {
+  callCustomOpenAiApi,
   captureMvuSnapshot,
   getActivePluginNames,
   getDatabaseApi,
@@ -147,7 +148,15 @@ import {
   normalizeOpenAiBaseUrl,
 } from './plugins';
 import { useTimeLoopStore, type SlotKey } from './store';
-import { buildSummaryPrompts, cleanRawMessageText } from './summarizer';
+import {
+  buildChunkMapPrompt,
+  buildChunkReducePrompt,
+  buildSummaryPrompts,
+  cleanRawMessageText,
+  cleanSummaryOutputText,
+  splitTimelineIntoChunks,
+  type BuildSummaryPromptsOptions,
+} from './summarizer';
 
 const store = useTimeLoopStore();
 
@@ -334,14 +343,46 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
   const startChatId = store.currentChatId;
 
   const dbApi = getDatabaseApi();
-  const useDbAi = !store.settings.use_main_api && store.settings.use_database_ai && Boolean(dbApi?.callAI);
-  const normalizedApiUrl = normalizeOpenAiBaseUrl(store.settings.api_url);
-  if (!store.settings.use_main_api && !useDbAi) {
-    if (!normalizedApiUrl || !store.settings.model.trim()) {
-      toastr.warning('请先在「设置」中配置自定义 API 地址与模型名称，或开启「使用酒馆当前主聊天 AI」');
+  const apiMode = store.settings.api_mode;
+  const activePreset = store.activeCustomPreset;
+  const normalizedApiUrl = normalizeOpenAiBaseUrl(activePreset.api_url || store.settings.api_url);
+  const customApiKey = (activePreset.api_key ?? store.settings.api_key).trim();
+  const customModel = (activePreset.model || store.settings.model).trim();
+  const useStream = Boolean(activePreset.stream ?? store.settings.stream);
+
+  if (apiMode === 'custom_api') {
+    if (!normalizedApiUrl || !customModel) {
+      toastr.warning('请先在「设置」中配置自定义 API 地址与模型名称，或切换至酒馆主聊天 AI');
       activeTab.value = 'settings';
       return;
     }
+  }
+
+  const tagOptions = {
+    mode: store.settings.tag_filter_mode ?? 'strip',
+    tagsInput: store.settings.custom_filter_tags ?? 'think, thinking',
+  };
+
+  async function requestAiCompletion(sysPrompt: string, usrPrompt: string): Promise<string> {
+    if (apiMode === 'custom_api') {
+      return await callCustomOpenAiApi({
+        apiUrl: normalizedApiUrl,
+        apiKey: customApiKey,
+        model: customModel,
+        stream: useStream,
+        systemPrompt: sysPrompt,
+        userPrompt: usrPrompt,
+      });
+    }
+
+    const result = await generateRaw({
+      user_input: usrPrompt,
+      ordered_prompts: [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: usrPrompt },
+      ],
+    });
+    return (typeof result === 'string' ? result : result?.content || '').trim();
   }
 
   isBusy.value = true;
@@ -352,7 +393,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
     const char = SillyTavern?.name2 || '角色';
     const user = SillyTavern?.name1 || '主角';
 
-    const { systemPrompt, userPrompt, sourceDescription } = buildSummaryPrompts({
+    const promptOptions: BuildSummaryPromptsOptions = {
       messages: raw,
       slot,
       currentFloor: effectiveCurrentFloor,
@@ -363,36 +404,50 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
       wordLimit: store.settings.summary_word_limit,
       systemPromptTemplate: store.settings.summary_system_prompt,
       userPromptTemplate: store.settings.summary_user_prompt,
-    });
+      tagFilterMode: tagOptions.mode,
+      customFilterTags: tagOptions.tagsInput,
+    };
+
+    const built = buildSummaryPrompts(promptOptions);
+    const sourceDescription = built.sourceDescription;
+    const maxChunkChars = Math.max(1000, Number(store.settings.max_chunk_chars) || 32000);
+    const chunks = splitTimelineIntoChunks(built.timelineBlocks, built.timelineDataText, maxChunkChars);
 
     let resultText = '';
-    if (useDbAi && dbApi?.callAI) {
-      const preset = store.settings.database_ai_preset.trim();
-      const aiRes = await dbApi.callAI(
-        [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        preset ? { presetName: preset } : undefined,
-      );
-      resultText = (aiRes ?? '').trim();
+    if (chunks.length <= 1) {
+      resultText = await requestAiCompletion(built.systemPrompt, built.userPrompt);
     } else {
-      const result = await generateRaw({
-        user_input: userPrompt,
-        custom_api: store.settings.use_main_api
-          ? undefined
-          : {
-              apiurl: normalizedApiUrl,
-              key: store.settings.api_key.trim(),
-              model: store.settings.model.trim(),
-              source: 'openai',
-            },
-        ordered_prompts: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+      toastr.info(`回溯区间文本较长（已超 ${maxChunkChars} 字），将分 ${chunks.length} 批提炼后合并...`);
+      const partialSummaries: string[] = [];
+
+      for (let idx = 0; idx < chunks.length; idx++) {
+        toastr.info(`正在分批提炼记忆 (${idx + 1}/${chunks.length})...`);
+        const mapPrompt = buildChunkMapPrompt({
+          baseSystemPrompt: built.systemPrompt,
+          fromFloor: slot.floor + 1,
+          toFloor: effectiveCurrentFloor,
+          chunkIndex: idx + 1,
+          totalChunks: chunks.length,
+          chunkText: chunks[idx],
+        });
+        const chunkReply = await requestAiCompletion(mapPrompt.systemPrompt, mapPrompt.userPrompt);
+        const cleanedChunk = cleanSummaryOutputText(chunkReply, tagOptions) || chunkReply.trim();
+        if (cleanedChunk) {
+          partialSummaries.push(cleanedChunk);
+        }
+      }
+
+      if (partialSummaries.length === 0) {
+        throw new Error('分批总结未获取到有效内容，回溯已中止');
+      }
+
+      toastr.info(`正在汇总合并 ${partialSummaries.length} 段阶段记录...`);
+      const reducePrompt = buildChunkReducePrompt({
+        options: promptOptions,
+        built,
+        partialSummaries,
       });
-      resultText = result.trim();
+      resultText = await requestAiCompletion(reducePrompt.systemPrompt, reducePrompt.userPrompt);
     }
 
     store.refreshChatSlots();
@@ -400,7 +455,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
       throw new Error('回溯期间聊天已切换，为保护档案安全已中止本次回溯');
     }
 
-    const memoryText = cleanRawMessageText(resultText) || resultText.trim();
+    const memoryText = cleanSummaryOutputText(resultText, tagOptions) || cleanRawMessageText(resultText, tagOptions);
     if (!memoryText) {
       throw new Error('AI 返回的总结内容为空，回溯已中止');
     }

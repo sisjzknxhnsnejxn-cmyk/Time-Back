@@ -6,13 +6,16 @@ import {
   ChatArchiveDataSchema,
   DEFAULT_SUMMARY_SYSTEM_PROMPT,
   DEFAULT_SUMMARY_USER_PROMPT,
+  type ApiMode,
   type ApiSettings,
   type ChatArchiveData,
   type ColorMode,
+  type CustomApiPreset,
   type LoopMemoryItem,
   type SlotItem,
   type SlotKey,
   type SummarySourceMode,
+  type TagFilterMode,
   type ThemeColor,
 } from './types';
 
@@ -30,13 +33,16 @@ function generateUuid(): string {
 export {
   DEFAULT_SUMMARY_SYSTEM_PROMPT,
   DEFAULT_SUMMARY_USER_PROMPT,
+  type ApiMode,
   type ApiSettings,
   type ChatArchiveData,
   type ColorMode,
+  type CustomApiPreset,
   type LoopMemoryItem,
   type SlotItem,
   type SlotKey,
   type SummarySourceMode,
+  type TagFilterMode,
   type ThemeColor,
 };
 
@@ -114,7 +120,66 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
     } catch {
       scriptVars = {};
     }
-    return ApiSettingsSchema.parse({ ...local, ...scriptVars });
+    const mergedRaw = { ...local, ...scriptVars } as Record<string, unknown>;
+    if (mergedRaw.api_mode === 'memory_plugin_api') {
+      mergedRaw.api_mode = 'main_api';
+    }
+    const parsed = ApiSettingsSchema.parse(mergedRaw);
+
+    // 1. 兼容迁移旧版 api_mode
+    if (!mergedRaw.api_mode) {
+      if (parsed.use_main_api === false) {
+        parsed.api_mode = 'custom_api';
+      } else {
+        parsed.api_mode = 'main_api';
+      }
+    } else {
+      parsed.use_main_api = parsed.api_mode === 'main_api';
+    }
+
+    // 2. 兼容迁移多套自定义 API 设置
+    if (!Array.isArray(parsed.custom_api_presets) || parsed.custom_api_presets.length === 0) {
+      const defaultPreset: CustomApiPreset = {
+        id: generateUuid(),
+        name: '自定义配置 1',
+        api_url: parsed.api_url || 'https://api.openai.com/v1',
+        api_key: parsed.api_key || '',
+        model: parsed.model || 'gpt-4o-mini',
+        model_list:
+          Array.isArray(parsed.model_list) && parsed.model_list.length > 0
+            ? parsed.model_list
+            : [parsed.model || 'gpt-4o-mini'],
+        stream: Boolean(parsed.stream),
+      };
+      parsed.custom_api_presets = [defaultPreset];
+      parsed.active_custom_api_id = defaultPreset.id;
+    } else if (
+      !parsed.active_custom_api_id ||
+      !parsed.custom_api_presets.some(p => p.id === parsed.active_custom_api_id)
+    ) {
+      parsed.active_custom_api_id = parsed.custom_api_presets[0].id;
+    }
+
+    // 同步当前激活的自定义 API 到顶层字段
+    const activePreset =
+      parsed.custom_api_presets.find(p => p.id === parsed.active_custom_api_id) ?? parsed.custom_api_presets[0];
+    if (activePreset) {
+      parsed.api_url = activePreset.api_url;
+      parsed.api_key = activePreset.api_key;
+      parsed.model = activePreset.model;
+      parsed.model_list = activePreset.model_list;
+    }
+
+    // 3. 将旧版过小的默认字数范围 180-320 自动升级为 300-800
+    if (!parsed.summary_word_limit || parsed.summary_word_limit.trim() === '180-320') {
+      parsed.summary_word_limit = '300-800';
+    }
+
+    if (!parsed.max_chunk_chars || parsed.max_chunk_chars < 1000) {
+      parsed.max_chunk_chars = 32000;
+    }
+
+    return parsed;
   }
 
   function loadChatArchiveFor(chatId: string): ChatArchiveData {
@@ -275,6 +340,97 @@ ${memoryBlocks}
     settings.value.theme_color = color;
   }
 
+  const activeCustomPreset = computed<CustomApiPreset>(() => {
+    const list = settings.value.custom_api_presets;
+    const found = list.find(p => p.id === settings.value.active_custom_api_id);
+    if (found) return found;
+    if (list.length > 0) return list[0];
+    const fallback: CustomApiPreset = {
+      id: 'default_preset',
+      name: '自定义配置 1',
+      api_url: settings.value.api_url || 'https://api.openai.com/v1',
+      api_key: settings.value.api_key || '',
+      model: settings.value.model || 'gpt-4o-mini',
+      model_list: settings.value.model_list?.length ? settings.value.model_list : ['gpt-4o-mini'],
+      stream: Boolean(settings.value.stream),
+    };
+    return fallback;
+  });
+
+  function syncActivePresetToLegacyFields() {
+    const cur = activeCustomPreset.value;
+    settings.value.api_url = cur.api_url;
+    settings.value.api_key = cur.api_key;
+    settings.value.model = cur.model;
+    settings.value.model_list = [...cur.model_list];
+  }
+
+  function setApiMode(mode: ApiMode) {
+    settings.value.api_mode = mode;
+    settings.value.use_main_api = mode === 'main_api';
+  }
+
+  function selectCustomApiPreset(id: string) {
+    if (!settings.value.custom_api_presets.some(p => p.id === id)) return;
+    settings.value.active_custom_api_id = id;
+    syncActivePresetToLegacyFields();
+  }
+
+  function addCustomApiPreset(partial?: Partial<CustomApiPreset>): CustomApiPreset {
+    const index = settings.value.custom_api_presets.length + 1;
+    const newPreset: CustomApiPreset = {
+      id: generateUuid(),
+      name: partial?.name?.trim() || `自定义配置 ${index}`,
+      api_url: partial?.api_url ?? 'https://api.openai.com/v1',
+      api_key: partial?.api_key ?? '',
+      model: partial?.model ?? 'gpt-4o-mini',
+      model_list: partial?.model_list?.length ? [...partial.model_list] : [partial?.model || 'gpt-4o-mini'],
+      stream: partial?.stream ?? Boolean(settings.value.stream),
+    };
+    settings.value.custom_api_presets.push(newPreset);
+    settings.value.active_custom_api_id = newPreset.id;
+    syncActivePresetToLegacyFields();
+    return newPreset;
+  }
+
+  function duplicateCustomApiPreset(id: string): CustomApiPreset | null {
+    const source = settings.value.custom_api_presets.find(p => p.id === id);
+    if (!source) return null;
+    return addCustomApiPreset({
+      name: `${source.name} (副本)`,
+      api_url: source.api_url,
+      api_key: source.api_key,
+      model: source.model,
+      model_list: [...source.model_list],
+      stream: source.stream,
+    });
+  }
+
+  function removeCustomApiPreset(id: string) {
+    const list = settings.value.custom_api_presets;
+    const idx = list.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    list.splice(idx, 1);
+
+    if (list.length === 0) {
+      const resetPreset: CustomApiPreset = {
+        id: generateUuid(),
+        name: '自定义配置 1',
+        api_url: 'https://api.openai.com/v1',
+        api_key: '',
+        model: 'gpt-4o-mini',
+        model_list: ['gpt-4o-mini'],
+        stream: false,
+      };
+      list.push(resetPreset);
+      settings.value.active_custom_api_id = resetPreset.id;
+    } else if (settings.value.active_custom_api_id === id) {
+      const nextIdx = Math.min(idx, list.length - 1);
+      settings.value.active_custom_api_id = list[nextIdx].id;
+    }
+    syncActivePresetToLegacyFields();
+  }
+
   function compactSlots() {
     const orderedKeys: SlotKey[] = ['slot_1', 'slot_2', 'slot_3'];
     const nonNullSlots = orderedKeys
@@ -328,7 +484,7 @@ ${memoryBlocks}
   }
 
   function resetSummaryPrompts() {
-    settings.value.summary_word_limit = '180-320';
+    settings.value.summary_word_limit = '300-800';
     settings.value.summary_system_prompt = DEFAULT_SUMMARY_SYSTEM_PROMPT;
     settings.value.summary_user_prompt = DEFAULT_SUMMARY_USER_PROMPT;
   }
@@ -348,6 +504,7 @@ ${memoryBlocks}
 
   return {
     settings,
+    activeCustomPreset,
     chatData,
     currentChatId,
     occupiedSlotCount,
@@ -361,6 +518,12 @@ ${memoryBlocks}
     setColorMode,
     toggleColorMode,
     setThemeColor,
+    setApiMode,
+    selectCustomApiPreset,
+    addCustomApiPreset,
+    duplicateCustomApiPreset,
+    removeCustomApiPreset,
+    syncActivePresetToLegacyFields,
     clearSlot,
     updateMemory,
     addMemory,

@@ -58,6 +58,10 @@ export interface BaiBaiBookApi {
     relativeText?: string;
     coverage?: { complete?: boolean; missingAiFloors?: number[] };
   };
+  callAI?: (
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    options?: Record<string, unknown>,
+  ) => Promise<string | null>;
 }
 
 export interface AutoCardUpdaterApi {
@@ -65,6 +69,8 @@ export interface AutoCardUpdaterApi {
   restoreTableAsJson?: (json: string) => Promise<boolean>;
   refreshDataAndWorldbook?: () => Promise<boolean>;
   getStoryContext?: (maxTurns?: number) => string;
+  getPresetNames?: () => string[];
+  getPresets?: () => Array<string | { name?: string }>;
   callAI?: (
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     options?: { presetName?: string; max_tokens?: number | string; maxTokens?: number | string },
@@ -102,23 +108,56 @@ type ParentWindowWithPlugins = Window & {
 };
 
 export function getParentWin(): ParentWindowWithPlugins {
-  return (window.parent ?? window) as ParentWindowWithPlugins;
+  try {
+    return (window.parent ?? window) as ParentWindowWithPlugins;
+  } catch {
+    return window as ParentWindowWithPlugins;
+  }
+}
+
+function getCandidateWindows(): ParentWindowWithPlugins[] {
+  const list: ParentWindowWithPlugins[] = [];
+  try {
+    if (window.parent) list.push(window.parent as ParentWindowWithPlugins);
+  } catch {
+    // ignore
+  }
+  try {
+    if (window.top && window.top !== window.parent) list.push(window.top as ParentWindowWithPlugins);
+  } catch {
+    // ignore
+  }
+  list.push(window as ParentWindowWithPlugins);
+  list.push(globalThis as unknown as ParentWindowWithPlugins);
+  return list;
 }
 
 export function getBaiBaiApi(): BaiBaiBookApi | undefined {
-  return getParentWin().STBaiBaiBook ?? (globalThis as unknown as ParentWindowWithPlugins).STBaiBaiBook;
+  for (const w of getCandidateWindows()) {
+    if (w?.STBaiBaiBook) return w.STBaiBaiBook;
+  }
+  return undefined;
 }
 
 export function getDatabaseApi(): AutoCardUpdaterApi | undefined {
-  return getParentWin().AutoCardUpdaterAPI ?? (globalThis as unknown as ParentWindowWithPlugins).AutoCardUpdaterAPI;
+  for (const w of getCandidateWindows()) {
+    if (w?.AutoCardUpdaterAPI) return w.AutoCardUpdaterAPI;
+  }
+  return undefined;
 }
 
 export function getHoraeApi(): HoraeApi | undefined {
-  return getParentWin().Horae ?? (globalThis as unknown as ParentWindowWithPlugins).Horae;
+  for (const w of getCandidateWindows()) {
+    if (w?.Horae) return w.Horae;
+  }
+  return undefined;
 }
 
 export function getMvuApi() {
-  return getParentWin().Mvu ?? (globalThis as unknown as ParentWindowWithPlugins).Mvu;
+  for (const w of getCandidateWindows()) {
+    if (w?.Mvu) return w.Mvu;
+  }
+  return undefined;
 }
 
 export function hasHoraeDataInChat(): boolean {
@@ -507,6 +546,281 @@ export function normalizeOpenAiBaseUrl(rawUrl: string): string {
     .replace(/\/chat\/completions$/i, '')
     .replace(/\/models$/i, '')
     .replace(/\/+$/, '');
+}
+
+/**
+ * 解析 SSE 流式响应 (text/event-stream) 并拼接完整回复
+ */
+async function readOpenAiStreamResponse(
+  res: Response,
+  onChunk?: (accumulatedText: string) => void,
+): Promise<string> {
+  if (!res.body) {
+    const fallbackJson = await res.json();
+    return String(
+      fallbackJson?.choices?.[0]?.message?.content ??
+        fallbackJson?.choices?.[0]?.text ??
+        fallbackJson?.message?.content ??
+        '',
+    ).trim();
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let accumulated = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || !line.startsWith('data:')) continue;
+      const dataStr = line.slice(5).trim();
+      if (!dataStr || dataStr === '[DONE]') continue;
+
+      try {
+        const parsed = JSON.parse(dataStr);
+        const delta =
+          parsed?.choices?.[0]?.delta?.content ??
+          parsed?.choices?.[0]?.message?.content ??
+          parsed?.choices?.[0]?.text ??
+          '';
+        if (typeof delta === 'string' && delta.length > 0) {
+          accumulated += delta;
+          onChunk?.(accumulated);
+        }
+      } catch {
+        // ignore partial json
+      }
+    }
+  }
+
+  return accumulated.trim();
+}
+
+export interface CallCustomApiOptions {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  stream: boolean;
+  systemPrompt: string;
+  userPrompt: string;
+  onStreamUpdate?: (partialText: string) => void;
+}
+
+/**
+ * 调用自定义 OpenAI 兼容 API（支持流式 SSE 与非流式 JSON，跨域失败时自动回退至酒馆 generateRaw）
+ */
+export async function callCustomOpenAiApi(options: CallCustomApiOptions): Promise<string> {
+  const url = normalizeOpenAiBaseUrl(options.apiUrl);
+  const key = options.apiKey.trim();
+  const model = options.model.trim();
+
+  if (!url) {
+    throw new Error('自定义 API 地址为空，请在设置面板填写 API 地址');
+  }
+  if (!model) {
+    throw new Error('自定义 API 模型名称为空，请在设置面板选择或输入模型名称');
+  }
+
+  const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
+  if (options.systemPrompt.trim()) {
+    messages.push({ role: 'system', content: options.systemPrompt.trim() });
+  }
+  messages.push({ role: 'user', content: options.userPrompt });
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: options.stream ? 'text/event-stream, application/json' : 'application/json',
+    };
+    if (key) {
+      headers.Authorization = `Bearer ${key}`;
+    }
+
+    const res = await fetch(`${url}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: Boolean(options.stream),
+        temperature: 0.3,
+      }),
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const errJson = await res.json();
+        detail = errJson?.error?.message || errJson?.message || '';
+      } catch {
+        // ignore
+      }
+      throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (options.stream && contentType.includes('text/event-stream')) {
+      return await readOpenAiStreamResponse(res, options.onStreamUpdate);
+    }
+
+    const data = await res.json();
+    const content =
+      data?.choices?.[0]?.message?.content ??
+      data?.choices?.[0]?.text ??
+      data?.message?.content ??
+      data?.response ??
+      '';
+    return String(content || '').trim();
+  } catch (directErr) {
+    // 浏览器 CORS 拦截时回退至酒馆后端转发
+    try {
+      const rawRes = await generateRaw({
+        user_input: options.userPrompt,
+        custom_api: {
+          apiurl: url,
+          key,
+          model,
+          source: 'openai',
+        },
+        ordered_prompts: messages,
+      });
+      return (typeof rawRes === 'string' ? rawRes : rawRes?.content || '').trim();
+    } catch {
+      throw directErr instanceof Error ? directErr : new Error('调用自定义 API 失败');
+    }
+  }
+}
+
+export async function fetchOpenAiModels(rawUrl: string, rawKey: string): Promise<string[]> {
+  const url = normalizeOpenAiBaseUrl(rawUrl);
+  const key = rawKey.trim();
+  if (!url) {
+    throw new Error('请先填写 API 地址');
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (key) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+
+  const res = await fetch(`${url}/models`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const errJson = await res.json();
+      detail = errJson?.error?.message || errJson?.message || '';
+    } catch {
+      // ignore
+    }
+    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+  }
+
+  const data = await res.json();
+  const rawList = Array.isArray(data?.data)
+    ? data.data
+    : Array.isArray(data?.models)
+      ? data.models
+      : Array.isArray(data)
+        ? data
+        : [];
+
+  const models = rawList
+    .map((item: unknown) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        const obj = item as { id?: string; name?: string };
+        return (obj.id || obj.name || '').trim();
+      }
+      return '';
+    })
+    .filter((id: string): id is string => Boolean(id));
+
+  return Array.from(new Set(models));
+}
+
+export interface ApiTestResult {
+  ok: boolean;
+  latencyMs: number;
+  reply: string;
+  channelLabel: string;
+  error?: string;
+}
+
+export async function testCustomApiConnection(options: {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  stream?: boolean;
+}): Promise<ApiTestResult> {
+  const url = normalizeOpenAiBaseUrl(options.apiUrl);
+  const key = options.apiKey.trim();
+  const model = options.model.trim();
+  const useStream = Boolean(options.stream);
+  const startTime = Date.now();
+
+  if (!url) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      reply: '',
+      channelLabel: '自定义 API',
+      error: 'API 地址不能为空',
+    };
+  }
+  if (!model) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      reply: '',
+      channelLabel: '自定义 API',
+      error: '模型名称不能为空，请先拉取或手动输入模型名称',
+    };
+  }
+
+  const testPrompt = '请仅回复“连接正常”四个字，不要输出其他内容。';
+
+  try {
+    const reply = await callCustomOpenAiApi({
+      apiUrl: url,
+      apiKey: key,
+      model,
+      stream: useStream,
+      systemPrompt: '',
+      userPrompt: testPrompt,
+    });
+    const latencyMs = Date.now() - startTime;
+    const cleanReply = String(reply || '').trim() || '（收到 200 OK 响应）';
+    return {
+      ok: true,
+      latencyMs,
+      reply: cleanReply.slice(0, 80),
+      channelLabel: `${useStream ? '流式' : '非流式'} (${model})`,
+    };
+  } catch (err) {
+    const latencyMs = Date.now() - startTime;
+    const msg = err instanceof Error ? err.message : '连接失败，请检查 API 地址与网络';
+    return {
+      ok: false,
+      latencyMs,
+      reply: '',
+      channelLabel: `自定义 API (${model})`,
+      error: msg,
+    };
+  }
 }
 
 export function buildMvuSnapshotDiff(anchorSlot: SlotItem, currentFloor: number): string {
