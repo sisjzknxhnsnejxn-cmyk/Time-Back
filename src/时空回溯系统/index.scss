@@ -826,11 +826,66 @@
 [script_id] .tl-slot-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.55rem;
 
   .tl-btn-secondary,
   .tl-btn-primary {
     flex: 1;
+    min-width: 7.5rem;
+  }
+}
+
+[script_id] .tl-floor-picker {
+  display: inline-flex;
+  align-items: center;
+  height: 2.35rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--tl-border);
+  border-radius: 6px;
+  background: var(--tl-input-bg);
+  color: var(--tl-text-sec);
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--tl-accent);
+    box-shadow: 0 0 0 2px var(--tl-accent-soft);
+  }
+}
+
+[script_id] .tl-floor-prefix {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--tl-accent);
+  margin-right: 0.2rem;
+  user-select: none;
+}
+
+[script_id] .tl-floor-input {
+  width: 3.2rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--tl-text-main);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+
+  &::placeholder {
+    color: var(--tl-text-muted);
+    font-weight: 500;
+  }
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }
 

@@ -595,7 +595,7 @@ function safeClone<T>(val: T): T {
   }
 }
 
-export function captureMvuSnapshot(floor: number): Record<string, unknown> | null {
+export function captureMvuSnapshot(floor: number, currentMaxFloor?: number): Record<string, unknown> | null {
   try {
     const mvu = getMvuApi();
     if (mvu?.getMvuData) {
@@ -603,9 +603,11 @@ export function captureMvuSnapshot(floor: number): Record<string, unknown> | nul
       if (floorData && floorData.stat_data && Object.keys(floorData.stat_data).length > 0) {
         return safeClone(floorData);
       }
-      const latestData = mvu.getMvuData({ type: 'message', message_id: 'latest' });
-      if (latestData && latestData.stat_data && Object.keys(latestData.stat_data).length > 0) {
-        return safeClone(latestData);
+      for (let i = floor - 1; i >= 0; i--) {
+        const prevFloorData = mvu.getMvuData({ type: 'message', message_id: i });
+        if (prevFloorData && prevFloorData.stat_data && Object.keys(prevFloorData.stat_data).length > 0) {
+          return safeClone(prevFloorData);
+        }
       }
     }
     const chat = getNativeChatArray();
@@ -616,14 +618,30 @@ export function captureMvuSnapshot(floor: number): Record<string, unknown> | nul
         return safeClone({ stat_data: data.stat_data });
       }
     }
+    if (mvu?.getMvuData && (currentMaxFloor === undefined || floor >= currentMaxFloor)) {
+      const latestData = mvu.getMvuData({ type: 'message', message_id: 'latest' });
+      if (latestData && latestData.stat_data && Object.keys(latestData.stat_data).length > 0) {
+        return safeClone(latestData);
+      }
+    }
   } catch {
     // ignore
   }
   return null;
 }
 
-export function captureMvuChatSnapshot(): Record<string, unknown> | null {
+export function captureMvuChatSnapshot(targetFloor?: number, currentMaxFloor?: number): Record<string, unknown> | null {
   try {
+    if (
+      typeof targetFloor === 'number' &&
+      typeof currentMaxFloor === 'number' &&
+      targetFloor < currentMaxFloor
+    ) {
+      const historicalMvu = captureMvuSnapshot(targetFloor, currentMaxFloor);
+      if (historicalMvu) {
+        return historicalMvu;
+      }
+    }
     const mvu = getMvuApi();
     if (!mvu?.getMvuData) return null;
     const chatData = mvu.getMvuData({ type: 'chat' });
@@ -636,7 +654,84 @@ export function captureMvuChatSnapshot(): Record<string, unknown> | null {
   return null;
 }
 
-export function captureDatabaseSnapshot(): {
+function extractSheetMapFromAcuContainer(container: unknown): Record<string, Record<string, unknown>> {
+  const sheets: Record<string, Record<string, unknown>> = {};
+  if (!container || typeof container !== 'object') return sheets;
+  const obj = container as Record<string, unknown>;
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.startsWith('sheet_') && v && typeof v === 'object' && !Array.isArray(v)) {
+      sheets[k] = safeClone(v as Record<string, unknown>);
+    }
+  }
+
+  for (const val of Object.values(obj)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue;
+    const tagObj = val as Record<string, unknown>;
+    const indep = tagObj.independentData as Record<string, unknown> | undefined;
+    if (indep && typeof indep === 'object') {
+      for (const [sk, sv] of Object.entries(indep)) {
+        if (sk.startsWith('sheet_') && sv && typeof sv === 'object' && !Array.isArray(sv)) {
+          sheets[sk] = safeClone(sv as Record<string, unknown>);
+        }
+      }
+    }
+  }
+
+  return sheets;
+}
+
+function reconstructDatabaseJsonAtFloor(
+  targetFloor: number,
+  baseExportedObj: Record<string, unknown> | null,
+): { jsonStr: string; parsedObj: Record<string, unknown> } | null {
+  const chat = getNativeChatArray();
+  if (!Array.isArray(chat) || chat.length === 0) return null;
+
+  const upper = Math.min(targetFloor, chat.length - 1);
+  const mergedSheets: Record<string, Record<string, unknown>> = {};
+  let foundAnyFloorSheet = false;
+
+  for (let i = 0; i <= upper; i++) {
+    const rawMes = chat[i];
+    if (!rawMes || typeof rawMes !== 'object' || rawMes.is_hidden || rawMes.timeloop_abandoned) continue;
+    const rawExtra = (rawMes.extra as Record<string, unknown> | undefined) ?? {};
+
+    const candidates = [
+      rawMes.TavernDB_ACU_IsolatedData,
+      rawExtra.TavernDB_ACU_IsolatedData,
+      rawMes.TavernDB_ACU_Data,
+      rawExtra.TavernDB_ACU_Data,
+    ];
+
+    for (const cand of candidates) {
+      const extracted = extractSheetMapFromAcuContainer(cand);
+      for (const [sk, sv] of Object.entries(extracted)) {
+        mergedSheets[sk] = sv;
+        foundAnyFloorSheet = true;
+      }
+    }
+  }
+
+  if (!foundAnyFloorSheet) return null;
+
+  const resultObj: Record<string, unknown> = baseExportedObj
+    ? safeClone(baseExportedObj)
+    : { mate: { type: 'chatSheets', version: 1 } };
+  for (const [sk, sv] of Object.entries(mergedSheets)) {
+    resultObj[sk] = sv;
+  }
+
+  return {
+    jsonStr: JSON.stringify(resultObj),
+    parsedObj: resultObj,
+  };
+}
+
+export function captureDatabaseSnapshot(
+  targetFloor?: number,
+  currentMaxFloor?: number,
+): {
   database_snapshot: string | null;
   database_plot_preset: string | null;
   database_locks_snapshot: Record<string, unknown> | null;
@@ -659,6 +754,19 @@ export function captureDatabaseSnapshot(): {
       parsedObj = exported as Record<string, unknown>;
       database_snapshot = JSON.stringify(exported);
     }
+
+    if (
+      typeof targetFloor === 'number' &&
+      typeof currentMaxFloor === 'number' &&
+      targetFloor < currentMaxFloor
+    ) {
+      const reconstructed = reconstructDatabaseJsonAtFloor(targetFloor, parsedObj);
+      if (reconstructed) {
+        database_snapshot = reconstructed.jsonStr;
+        parsedObj = reconstructed.parsedObj;
+      }
+    }
+
     const preset = dbApi?.getCurrentPlotPreset?.();
     if (typeof preset === 'string' && preset.trim()) {
       database_plot_preset = preset.trim();
@@ -710,7 +818,10 @@ export function captureTavernVariablesSnapshot(): {
   return { chat_variables_snapshot, character_variables_snapshot };
 }
 
-export function captureChatMetadataSnapshot(): Record<string, unknown> | null {
+export function captureChatMetadataSnapshot(
+  targetFloor?: number,
+  currentMaxFloor?: number,
+): Record<string, unknown> | null {
   try {
     const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
     if (!meta || typeof meta !== 'object') return null;
@@ -718,6 +829,23 @@ export function captureChatMetadataSnapshot(): Record<string, unknown> | null {
     for (const [k, v] of Object.entries(meta)) {
       if (k === 'timeloop_archive_v2' || k === 'variables') continue;
       snap[k] = safeClone(v);
+    }
+    if (
+      typeof targetFloor === 'number' &&
+      typeof currentMaxFloor === 'number' &&
+      targetFloor < currentMaxFloor
+    ) {
+      const ext = snap.extensions as Record<string, unknown> | undefined;
+      const engramExt = ext?.engram as Record<string, unknown> | undefined;
+      const scopeState = engramExt?.scope_state as Record<string, unknown> | undefined;
+      if (scopeState && typeof scopeState === 'object') {
+        if (typeof scopeState.last_summarized_floor === 'number' && scopeState.last_summarized_floor > targetFloor) {
+          scopeState.last_summarized_floor = targetFloor;
+        }
+        if (typeof scopeState.last_extracted_floor === 'number' && scopeState.last_extracted_floor > targetFloor) {
+          scopeState.last_extracted_floor = targetFloor;
+        }
+      }
     }
     return Object.keys(snap).length > 0 ? snap : null;
   } catch {
@@ -739,7 +867,7 @@ export function captureBaiBaiSnapshot(floor: number): Record<string, unknown> | 
   return null;
 }
 
-export function captureHoraeSnapshot(floor: number): Record<string, unknown> | null {
+export function captureHoraeSnapshot(floor: number, currentMaxFloor?: number): Record<string, unknown> | null {
   try {
     const chat = getNativeChatArray();
     const floorsMeta: Record<string, unknown> = {};
@@ -754,7 +882,11 @@ export function captureHoraeSnapshot(floor: number): Record<string, unknown> | n
         }
       }
     }
-    const latestState = safeClone(getHoraeApi()?.getLatestState?.() ?? null);
+    const isHistorical =
+      typeof currentMaxFloor === 'number' && floor < currentMaxFloor;
+    const latestState = isHistorical
+      ? null
+      : safeClone(getHoraeApi()?.getLatestState?.() ?? null);
     if (Object.keys(floorsMeta).length === 0 && !latestState) {
       return null;
     }
@@ -938,9 +1070,79 @@ export async function readCurrentEngramData(): Promise<EngramSnapshotData | null
   }
 }
 
-export async function captureEngramSnapshot(): Promise<Record<string, unknown> | null> {
+function truncateEngramSnapshotToFloor(data: EngramSnapshotData, targetFloor: number): EngramSnapshotData {
+  const keptEvents: EngramEventNode[] = [];
+  let cutoffTimestamp: number | null = null;
+  let maxSummarizedFloor = 0;
+
+  for (const ev of data.events) {
+    const startIdx = ev.source_range?.start_index ?? 0;
+    const endIdx = ev.source_range?.end_index ?? startIdx;
+    if (startIdx > targetFloor || endIdx > targetFloor) {
+      if (typeof ev.timestamp === 'number' && ev.timestamp > 0) {
+        if (cutoffTimestamp === null || ev.timestamp < cutoffTimestamp) {
+          cutoffTimestamp = ev.timestamp;
+        }
+      }
+      continue;
+    }
+    keptEvents.push(ev);
+    if (endIdx > maxSummarizedFloor) {
+      maxSummarizedFloor = endIdx;
+    }
+  }
+
+  const keptEntities =
+    cutoffTimestamp !== null
+      ? data.entities.filter(en => {
+          const rawEn = en as unknown as Record<string, unknown>;
+          const createdTs =
+            typeof rawEn.created_at === 'number'
+              ? rawEn.created_at
+              : typeof rawEn.createdAt === 'number'
+                ? rawEn.createdAt
+                : null;
+          if (createdTs !== null && createdTs >= cutoffTimestamp!) {
+            return false;
+          }
+          return true;
+        })
+      : data.entities;
+
+  const nextExtMeta = data.extensionMeta ? safeClone(data.extensionMeta) : null;
+  if (nextExtMeta && typeof nextExtMeta === 'object') {
+    const scopeState = (nextExtMeta.scope_state ?? {}) as Record<string, unknown>;
+    const effectiveFloor = maxSummarizedFloor > 0 ? Math.min(targetFloor, maxSummarizedFloor) : targetFloor;
+    if (typeof scopeState.last_summarized_floor === 'number' && scopeState.last_summarized_floor > effectiveFloor) {
+      scopeState.last_summarized_floor = effectiveFloor;
+    }
+    if (typeof scopeState.last_extracted_floor === 'number' && scopeState.last_extracted_floor > targetFloor) {
+      scopeState.last_extracted_floor = targetFloor;
+    }
+    nextExtMeta.scope_state = scopeState;
+  }
+
+  return {
+    ...data,
+    events: keptEvents,
+    entities: keptEntities,
+    extensionMeta: nextExtMeta,
+  };
+}
+
+export async function captureEngramSnapshot(
+  targetFloor?: number,
+  currentMaxFloor?: number,
+): Promise<Record<string, unknown> | null> {
   const data = await readCurrentEngramData();
-  return data ? (data as unknown as Record<string, unknown>) : null;
+  if (!data) return null;
+  if (
+    typeof targetFloor === 'number' &&
+    (currentMaxFloor === undefined || targetFloor < currentMaxFloor)
+  ) {
+    return truncateEngramSnapshotToFloor(data, targetFloor) as unknown as Record<string, unknown>;
+  }
+  return data as unknown as Record<string, unknown>;
 }
 
 export async function restoreEngramSnapshot(slot: SlotItem, anchorFloor: number): Promise<boolean> {
@@ -1302,9 +1504,266 @@ export async function readCurrentQqjData(includeBackendRecords = false): Promise
   };
 }
 
-export async function captureQqjSnapshot(): Promise<Record<string, unknown> | null> {
+function extractChronologyAnchorText(anchor: unknown): string {
+  if (typeof anchor === 'string') return anchor.trim();
+  if (anchor && typeof anchor === 'object') {
+    const obj = anchor as Record<string, unknown>;
+    const explicitRef = typeof obj.explicitRef === 'string' ? obj.explicitRef.trim() : '';
+    const relativeOrder = typeof obj.relativeOrder === 'string' ? obj.relativeOrder.trim() : '';
+    return explicitRef || relativeOrder;
+  }
+  return '';
+}
+
+function extractItemFloorBounds(item: Record<string, unknown>): {
+  minFloor: number | null;
+  maxFloor: number | null;
+} {
+  const floorCandidates: number[] = [];
+  for (const key of [
+    'messageIndex',
+    'message_index',
+    'floor',
+    'sourceFloor',
+    'createdFloor',
+    'startFloor',
+    'fromFloor',
+    'endFloor',
+    'toFloor',
+    'maxFloor',
+    'messageId',
+    'message_id',
+  ]) {
+    const val = item[key];
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      floorCandidates.push(val);
+    } else if (key === 'sourceFloor' && val && typeof val === 'object') {
+      const sf = val as Record<string, unknown>;
+      if (typeof sf.messageIndex === 'number' && Number.isFinite(sf.messageIndex)) {
+        floorCandidates.push(sf.messageIndex);
+      } else if (typeof sf.floor === 'number' && Number.isFinite(sf.floor)) {
+        floorCandidates.push(sf.floor);
+      }
+    }
+  }
+  if (floorCandidates.length === 0) {
+    return { minFloor: null, maxFloor: null };
+  }
+  return {
+    minFloor: Math.min(...floorCandidates),
+    maxFloor: Math.max(...floorCandidates),
+  };
+}
+
+function truncateQqjRecordObject(
+  node: unknown,
+  targetFloor: number,
+  maxKeptFloor: number,
+  maxKeptAssistantSeq: number,
+  lastAnchorText: string,
+): unknown {
+  if (node === null || node === undefined || typeof node !== 'object') {
+    return node;
+  }
+  if (Array.isArray(node)) {
+    const filtered: unknown[] = [];
+    for (const elem of node) {
+      if (elem && typeof elem === 'object' && !Array.isArray(elem)) {
+        const rec = elem as Record<string, unknown>;
+        const { minFloor, maxFloor } = extractItemFloorBounds(rec);
+        if (minFloor !== null && minFloor > targetFloor) {
+          continue;
+        }
+        if (maxFloor !== null && maxFloor > targetFloor && (rec.endFloor !== undefined || rec.toFloor !== undefined)) {
+          continue;
+        }
+        if (minFloor === null && maxKeptAssistantSeq > 0) {
+          const seq =
+            typeof rec.assistantSeq === 'number'
+              ? rec.assistantSeq
+              : typeof rec.sourceAssistantSeq === 'number'
+                ? rec.sourceAssistantSeq
+                : typeof (rec.sourceFloor as Record<string, unknown> | undefined)?.assistantSeq === 'number'
+                  ? ((rec.sourceFloor as Record<string, unknown>).assistantSeq as number)
+                  : null;
+          if (seq !== null && seq > maxKeptAssistantSeq) {
+            continue;
+          }
+        }
+      }
+      filtered.push(
+        truncateQqjRecordObject(elem, targetFloor, maxKeptFloor, maxKeptAssistantSeq, lastAnchorText),
+      );
+    }
+    return filtered;
+  }
+
+  const obj = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const floorCursorKeys = new Set([
+    'lastRecordedFloor',
+    'lastSyncedFloor',
+    'latestFloor',
+    'lastFloor',
+    'maxFloor',
+    'headFloor',
+    'cursorFloor',
+    'updatedFloor',
+    'lastMessageIndex',
+    'latestMessageIndex',
+  ]);
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (floorCursorKeys.has(k) && typeof v === 'number' && v > targetFloor) {
+      out[k] = k === 'updatedFloor' ? targetFloor : maxKeptFloor;
+      continue;
+    }
+    if (
+      lastAnchorText &&
+      (k === 'currentStoryTime' || k === 'displayText' || k === 'latestChronologyAnchor') &&
+      typeof v === 'string' &&
+      v.trim()
+    ) {
+      out[k] = lastAnchorText;
+      continue;
+    }
+    out[k] = truncateQqjRecordObject(v, targetFloor, maxKeptFloor, maxKeptAssistantSeq, lastAnchorText);
+  }
+  return out;
+}
+
+function truncateQqjSnapshotToFloor(data: QqjSnapshotData, targetFloor: number): QqjSnapshotData {
+  const cloned = safeClone(data);
+
+  // 1. 过滤 detailedFloors 并找出 <= targetFloor 的最大已记录楼层、最大 assistantSeq 与最后时间锚点
+  cloned.detailedFloors = (cloned.detailedFloors ?? []).filter(f => {
+    const rawF = f as unknown as Record<string, unknown>;
+    const fl =
+      typeof f.messageIndex === 'number'
+        ? f.messageIndex
+        : typeof rawF.floor === 'number'
+          ? (rawF.floor as number)
+          : 0;
+    return fl <= targetFloor;
+  });
+
+  let maxKeptFloor = 0;
+  let maxKeptAssistantSeq = 0;
+  let lastAnchorText = '';
+  for (const f of cloned.detailedFloors) {
+    const rawF = f as unknown as Record<string, unknown>;
+    const fl =
+      typeof f.messageIndex === 'number'
+        ? f.messageIndex
+        : typeof rawF.floor === 'number'
+          ? (rawF.floor as number)
+          : 0;
+    if (fl <= targetFloor) {
+      if (fl > maxKeptFloor) maxKeptFloor = fl;
+      if (typeof f.assistantSeq === 'number' && f.assistantSeq > maxKeptAssistantSeq) {
+        maxKeptAssistantSeq = f.assistantSeq;
+      }
+      const anchorStr = extractChronologyAnchorText(f.chronologyAnchor);
+      if (anchorStr) {
+        lastAnchorText = anchorStr;
+      }
+    }
+  }
+
+  // 如果 detailedFloors 未命中，尝试从原生聊天记录 0..targetFloor 的 extra.qianqianjie_floor 提取
+  if (!lastAnchorText || maxKeptFloor === 0) {
+    const chat = getNativeChatArray();
+    if (Array.isArray(chat)) {
+      const upper = Math.min(targetFloor, chat.length - 1);
+      for (let i = 0; i <= upper; i++) {
+        const extra = chat[i]?.extra as Record<string, unknown> | undefined;
+        const qf = extra?.qianqianjie_floor as QqjMemoryFloorItem | undefined;
+        if (qf && typeof qf === 'object') {
+          if (i > maxKeptFloor) maxKeptFloor = i;
+          if (typeof qf.assistantSeq === 'number' && qf.assistantSeq > maxKeptAssistantSeq) {
+            maxKeptAssistantSeq = qf.assistantSeq;
+          }
+          const anchorStr = extractChronologyAnchorText(qf.chronologyAnchor);
+          if (anchorStr) {
+            lastAnchorText = anchorStr;
+          }
+        }
+      }
+    }
+  }
+  if (maxKeptFloor === 0) {
+    maxKeptFloor = targetFloor;
+  }
+
+  // 2. 裁剪 publicSnapshot
+  if (cloned.publicSnapshot) {
+    cloned.publicSnapshot = truncateQqjRecordObject(
+      cloned.publicSnapshot,
+      targetFloor,
+      maxKeptFloor,
+      maxKeptAssistantSeq,
+      lastAnchorText,
+    ) as QqjPublicSnapshot;
+  }
+
+  // 3. 裁剪 qianshiSnapshot
+  if (cloned.qianshiSnapshot) {
+    cloned.qianshiSnapshot = truncateQqjRecordObject(
+      cloned.qianshiSnapshot,
+      targetFloor,
+      maxKeptFloor,
+      maxKeptAssistantSeq,
+      lastAnchorText,
+    ) as QqjQianshiSnapshot;
+  }
+
+  // 4. 裁剪 backendRecords (v3-root, v3-people-workspace, v3-time-head)
+  if (cloned.backendRecords) {
+    if (cloned.backendRecords.root) {
+      cloned.backendRecords.root = truncateQqjRecordObject(
+        cloned.backendRecords.root,
+        targetFloor,
+        maxKeptFloor,
+        maxKeptAssistantSeq,
+        lastAnchorText,
+      ) as Record<string, unknown>;
+    }
+    if (cloned.backendRecords.peopleWorkspace) {
+      cloned.backendRecords.peopleWorkspace = truncateQqjRecordObject(
+        cloned.backendRecords.peopleWorkspace,
+        targetFloor,
+        maxKeptFloor,
+        maxKeptAssistantSeq,
+        lastAnchorText,
+      ) as Record<string, unknown>;
+    }
+    if (cloned.backendRecords.timeHead) {
+      cloned.backendRecords.timeHead = truncateQqjRecordObject(
+        cloned.backendRecords.timeHead,
+        targetFloor,
+        maxKeptFloor,
+        maxKeptAssistantSeq,
+        lastAnchorText,
+      ) as Record<string, unknown>;
+    }
+  }
+
+  return cloned;
+}
+
+export async function captureQqjSnapshot(
+  targetFloor?: number,
+  currentMaxFloor?: number,
+): Promise<Record<string, unknown> | null> {
   const data = await readCurrentQqjData(true);
-  return data ? (data as unknown as Record<string, unknown>) : null;
+  if (!data) return null;
+  if (
+    typeof targetFloor === 'number' &&
+    (currentMaxFloor === undefined || targetFloor < currentMaxFloor)
+  ) {
+    return truncateQqjSnapshotToFloor(data, targetFloor) as unknown as Record<string, unknown>;
+  }
+  return data as unknown as Record<string, unknown>;
 }
 
 export async function restoreQqjSnapshot(slot: SlotItem): Promise<boolean> {

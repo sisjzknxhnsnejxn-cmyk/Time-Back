@@ -112,6 +112,7 @@
             v-if="activeTab === 'slots'"
             :slots="store.chatData.timeloop_slots"
             :memories="store.chatData.timeloop_memories"
+            :current-floor="currentMaxFloor"
             :is-busy="isBusy"
             :busy-slot-key="busySlotKey"
             :just-saved-key="justSavedSlotKey"
@@ -180,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FlatIcon, { type FlatIconName } from './components/FlatIcon.vue';
 import HelpModal from './components/HelpModal.vue';
 import MemoriesPanel from './components/MemoriesPanel.vue';
@@ -259,6 +260,36 @@ const shortChatId = computed(() => {
   const id = store.currentChatId || '未绑定';
   return id.length > 22 ? `${id.slice(0, 10)}...${id.slice(-8)}` : id;
 });
+
+const currentMaxFloor = ref<number>(-1);
+
+function refreshCurrentMaxFloor() {
+  try {
+    const lastId = getLastMessageId();
+    if (lastId < 0) {
+      currentMaxFloor.value = -1;
+      return;
+    }
+    const unhiddenList = getChatMessages(`0-${lastId}`, { hide_state: 'unhidden', include_swipes: false });
+    if (unhiddenList.length > 0) {
+      currentMaxFloor.value = unhiddenList[unhiddenList.length - 1].message_id;
+    } else {
+      currentMaxFloor.value = lastId;
+    }
+  } catch {
+    currentMaxFloor.value = -1;
+  }
+}
+
+watch(
+  () => [store.isModalOpen, store.isMinimized, store.currentChatId, activeTab.value],
+  () => {
+    if (store.isModalOpen && !store.isMinimized) {
+      refreshCurrentMaxFloor();
+    }
+  },
+  { immediate: true },
+);
 
 const activePlugins = computed(() => {
   // 随弹窗打开或楼层变化动态计算已安装的记忆插件
@@ -471,7 +502,7 @@ function handleClearAllMemories() {
   toastr.info('已清空所有记忆');
 }
 
-const saveSlot = errorCatched(async (key: SlotKey) => {
+const saveSlot = errorCatched(async (key: SlotKey, requestedFloor?: number) => {
   const lastId = getLastMessageId();
   if (lastId < 0) {
     toastr.warning('当前还没有聊天记录');
@@ -479,7 +510,24 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
   }
 
   const unhiddenList = getChatMessages(`0-${lastId}`, { hide_state: 'unhidden', include_swipes: false });
-  const targetMsg = unhiddenList.length > 0 ? unhiddenList[unhiddenList.length - 1] : getChatMessages(lastId)[0];
+  const latestUnhiddenMsg = unhiddenList.length > 0 ? unhiddenList[unhiddenList.length - 1] : getChatMessages(lastId)[0];
+  const currentLatestFloor = latestUnhiddenMsg?.message_id ?? lastId;
+
+  let targetMsg = latestUnhiddenMsg;
+  if (typeof requestedFloor === 'number' && Number.isFinite(requestedFloor)) {
+    const normalizedFloor = Math.floor(requestedFloor);
+    if (normalizedFloor < 0 || normalizedFloor > lastId) {
+      toastr.warning(`目标楼层 #${normalizedFloor} 超出当前聊天范围（0 ~ ${lastId}）`);
+      return;
+    }
+    const foundInUnhidden = unhiddenList.find(m => m.message_id === normalizedFloor);
+    const specificMsg = foundInUnhidden ?? getChatMessages(normalizedFloor, { include_swipes: false })[0];
+    if (!specificMsg) {
+      toastr.warning(`未找到第 ${normalizedFloor} 层的聊天消息`);
+      return;
+    }
+    targetMsg = specificMsg;
+  }
 
   if (!targetMsg) {
     toastr.warning('未找到可记录的聊天楼层');
@@ -489,17 +537,20 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
   const floor = targetMsg.message_id;
   const cleanPreview = cleanRawMessageText(targetMsg.message) || targetMsg.message;
 
-  const { database_snapshot, database_plot_preset, database_locks_snapshot } = captureDatabaseSnapshot();
-  const mvuSnap = captureMvuSnapshot(floor);
-  const mvuChatSnap = captureMvuChatSnapshot();
+  const { database_snapshot, database_plot_preset, database_locks_snapshot } = captureDatabaseSnapshot(
+    floor,
+    currentLatestFloor,
+  );
+  const mvuSnap = captureMvuSnapshot(floor, currentLatestFloor);
+  const mvuChatSnap = captureMvuChatSnapshot(floor, currentLatestFloor);
   const { chat_variables_snapshot, character_variables_snapshot } = captureTavernVariablesSnapshot();
-  const chatMetaSnap = captureChatMetadataSnapshot();
+  const chatMetaSnap = captureChatMetadataSnapshot(floor, currentLatestFloor);
   const baibaiSnap = captureBaiBaiSnapshot(floor);
-  const horaeSnap = captureHoraeSnapshot(floor);
+  const horaeSnap = captureHoraeSnapshot(floor, currentLatestFloor);
   const chatMsgsSnap = captureChatMessagesSnapshot(floor);
   const [engramSnap, qqjSnap] = await Promise.all([
-    captureEngramSnapshot().catch(() => null),
-    captureQqjSnapshot().catch(() => null),
+    captureEngramSnapshot(floor, currentLatestFloor).catch(() => null),
+    captureQqjSnapshot(floor, currentLatestFloor).catch(() => null),
   ]);
 
   store.chatData.timeloop_slots[key] = {
@@ -521,6 +572,7 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
     chat_messages_snapshot: chatMsgsSnap,
   };
   store.persistChatArchive();
+  refreshCurrentMaxFloor();
   justSavedSlotKey.value = key;
   if (savedFeedbackTimer) clearTimeout(savedFeedbackTimer);
   savedFeedbackTimer = setTimeout(() => {
@@ -528,7 +580,11 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
       justSavedSlotKey.value = null;
     }
   }, 1200);
-  toastr.success(`已记录第 ${floor} 层为时间锚点`);
+  if (floor < currentLatestFloor) {
+    toastr.success(`已逆向构建并记录历史第 ${floor} 层（当前第 ${currentLatestFloor} 层）为时间锚点`);
+  } else {
+    toastr.success(`已记录第 ${floor} 层为时间锚点`);
+  }
 });
 
 const rewindToSlot = errorCatched(async (key: SlotKey) => {
@@ -711,6 +767,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
 
     store.compactSlots();
     store.persistChatArchive();
+    refreshCurrentMaxFloor();
 
     // 外部插件恢复完成后再次同步记忆注入，防止外部插件刷新时冲掉回溯记忆
     store.syncMemoryInjection();
