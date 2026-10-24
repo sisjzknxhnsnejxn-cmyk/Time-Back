@@ -117,12 +117,36 @@ export const ApiSettingsSchema = z
   })
   .prefault({});
 
+export const ChatMessageSnapshotItemSchema = z.object({
+  message_id: z.number().int().nonnegative(),
+  name: z.string().optional(),
+  role: z.enum(['system', 'assistant', 'user']).optional(),
+  is_hidden: z.boolean().optional(),
+  message: z.string().optional(),
+  swipe_id: z.number().int().optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+  extra: z.record(z.string(), z.unknown()).optional(),
+  horae_meta: z.record(z.string(), z.unknown()).nullable().optional(),
+  acu_meta: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+export type ChatMessageSnapshotItem = z.infer<typeof ChatMessageSnapshotItemSchema>;
+
 export const SlotItemSchema = z.object({
   floor: z.number().int().nonnegative(),
   preview: z.string(),
   timestamp: z.string(),
   database_snapshot: z.string().nullable().default(null),
+  database_plot_preset: z.string().nullable().default(null),
+  database_locks_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
   mvu_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  mvu_chat_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  chat_variables_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  character_variables_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  chat_metadata_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  baibai_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  horae_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  chat_messages_snapshot: z.array(ChatMessageSnapshotItemSchema).nullable().default(null),
 });
 
 export const SLOT_KEYS = ['slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5'] as const;

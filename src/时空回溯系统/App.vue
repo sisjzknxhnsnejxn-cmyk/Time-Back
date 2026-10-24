@@ -188,11 +188,17 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import SlotsPanel from './components/SlotsPanel.vue';
 import {
   callCustomOpenAiApi,
+  captureBaiBaiSnapshot,
+  captureChatMessagesSnapshot,
+  captureChatMetadataSnapshot,
+  captureDatabaseSnapshot,
+  captureHoraeSnapshot,
+  captureMvuChatSnapshot,
   captureMvuSnapshot,
+  captureTavernVariablesSnapshot,
   getActivePluginNames,
-  getDatabaseApi,
   getHoraeApi,
-  getMvuApi,
+  hideRewoundFloorsAndRestoreAnchor,
   normalizeOpenAiBaseUrl,
 } from './plugins';
 import { useTimeLoopStore, type SlotKey } from './store';
@@ -480,24 +486,30 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
   const floor = targetMsg.message_id;
   const cleanPreview = cleanRawMessageText(targetMsg.message) || targetMsg.message;
 
-  let dbSnap: string | null = null;
-  try {
-    const exported = getDatabaseApi()?.exportTableAsJson?.();
-    if (exported && typeof exported === 'object') {
-      dbSnap = JSON.stringify(exported);
-    }
-  } catch {
-    dbSnap = null;
-  }
-
+  const { database_snapshot, database_plot_preset, database_locks_snapshot } = captureDatabaseSnapshot();
   const mvuSnap = captureMvuSnapshot(floor);
+  const mvuChatSnap = captureMvuChatSnapshot();
+  const { chat_variables_snapshot, character_variables_snapshot } = captureTavernVariablesSnapshot();
+  const chatMetaSnap = captureChatMetadataSnapshot();
+  const baibaiSnap = captureBaiBaiSnapshot(floor);
+  const horaeSnap = captureHoraeSnapshot(floor);
+  const chatMsgsSnap = captureChatMessagesSnapshot(floor);
 
   store.chatData.timeloop_slots[key] = {
     floor,
     preview: cleanPreview.length > 90 ? `${cleanPreview.slice(0, 90)}...` : cleanPreview,
     timestamp: new Date().toLocaleTimeString(),
-    database_snapshot: dbSnap,
+    database_snapshot,
+    database_plot_preset,
+    database_locks_snapshot,
     mvu_snapshot: mvuSnap,
+    mvu_chat_snapshot: mvuChatSnap,
+    chat_variables_snapshot,
+    character_variables_snapshot,
+    chat_metadata_snapshot: chatMetaSnap,
+    baibai_snapshot: baibaiSnap,
+    horae_snapshot: horaeSnap,
+    chat_messages_snapshot: chatMsgsSnap,
   };
   store.persistChatArchive();
   justSavedSlotKey.value = key;
@@ -536,7 +548,6 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
   const effectiveCurrentFloor = raw[raw.length - 1].message_id;
   const startChatId = store.currentChatId;
 
-  const dbApi = getDatabaseApi();
   const apiMode = store.settings.api_mode;
   const activePreset = store.activeCustomPreset;
   const normalizedApiUrl = normalizeOpenAiBaseUrl(activePreset.api_url || store.settings.api_url);
@@ -660,60 +671,24 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
       throw new Error(`第 ${slot.floor} 层的锚点消息已不存在，回溯已中止`);
     }
 
-    const toHide = getChatMessages(`${slot.floor}-${latestIdNow}`, { hide_state: 'unhidden', include_swipes: false });
-    if (toHide.length > 0) {
-      await setChatMessages(
-        toHide.map(m => ({
-          message_id: m.message_id,
-          is_hidden: true,
-          data: { ...m.data, timeloop_abandoned: true, bbs_omit: true },
-          extra: { ...m.extra, timeloop_abandoned: true, bbs_omit: true },
-        })),
-        { refresh: 'affected' },
-      );
-    }
+    const anchorFloor = slot.floor;
+    const { hiddenCount, restoredPlugins } = await hideRewoundFloorsAndRestoreAnchor(slot, latestIdNow);
 
-    const cleanAnchorData = { ...(latestAnchor.data ?? {}) };
-    delete cleanAnchorData.timeloop_abandoned;
-    delete cleanAnchorData.bbs_omit;
-
-    const cleanAnchorExtra = { ...(latestAnchor.extra ?? {}) };
-    delete cleanAnchorExtra.timeloop_abandoned;
-    delete cleanAnchorExtra.bbs_omit;
-
-    await createChatMessages(
-      [
-        {
-          name: latestAnchor.name,
-          role: latestAnchor.role,
-          is_hidden: false,
-          message: latestAnchor.message,
-          data: cleanAnchorData,
-          extra: cleanAnchorExtra,
-        },
-      ],
-      { refresh: 'all' },
-    );
-
-    const newAnchorFloor = getLastMessageId();
-    const oldAnchorFloor = slot.floor;
     const slotNumber = slotKeys.indexOf(key) + 1;
-    const anchorTitle = `锚点 0${slotNumber}（第 ${newAnchorFloor} 层）`;
+    const anchorTitle = `锚点 0${slotNumber}（第 ${anchorFloor} 层）`;
 
     const newItem = store.addMemory(
-      `${anchorTitle} ← 原第 ${oldAnchorFloor + 1} 至 ${effectiveCurrentFloor} 层`,
+      `${anchorTitle} ← 原第 ${anchorFloor + 1} 至 ${effectiveCurrentFloor} 层`,
       memoryText,
     );
     newItem.anchor_key = key;
-    newItem.anchor_floor = newAnchorFloor;
+    newItem.anchor_floor = anchorFloor;
 
     const clearedSubsequentFloors: number[] = [];
     for (const k of slotKeys) {
       const s = store.chatData.timeloop_slots[k];
       if (!s) continue;
-      if (s.floor === oldAnchorFloor) {
-        store.chatData.timeloop_slots[k] = { ...s, floor: newAnchorFloor };
-      } else if (s.floor > oldAnchorFloor) {
+      if (s.floor > anchorFloor) {
         clearedSubsequentFloors.push(s.floor);
         store.chatData.timeloop_slots[k] = null;
       }
@@ -721,26 +696,6 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
 
     store.compactSlots();
     store.persistChatArchive();
-
-    if (slot.database_snapshot && dbApi?.restoreTableAsJson) {
-      const restored = await dbApi.restoreTableAsJson(slot.database_snapshot);
-      if (restored) {
-        await dbApi.refreshDataAndWorldbook?.();
-      } else {
-        toastr.warning('记忆表格快照恢复未成功');
-      }
-    }
-
-    if (slot.mvu_snapshot) {
-      try {
-        const mvu = getMvuApi();
-        if (mvu?.replaceMvuData) {
-          await mvu.replaceMvuData(slot.mvu_snapshot, { type: 'message', message_id: 'latest' });
-        }
-      } catch {
-        // ignore
-      }
-    }
 
     // 外部插件恢复完成后再次同步记忆注入，防止外部插件刷新时冲掉回溯记忆
     store.syncMemoryInjection();
@@ -753,7 +708,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
           position: 'in_chat',
           depth: 0,
           role: 'system',
-          content: `时间已从第 ${effectiveCurrentFloor} 层回溯至当前存档点。物理世界与其他 NPC 已恢复存档点状态并遗忘后续经历；${char} 与 ${user} 保留客观事件记录。请自然承接场景。`,
+          content: `时间已从第 ${effectiveCurrentFloor} 层回溯至第 ${anchorFloor} 层存档锚点。物理世界与其他 NPC 已恢复至第 ${anchorFloor} 层存档点状态并遗忘后续经历；${char} 与 ${user} 保留客观事件记录。请自然承接第 ${anchorFloor} 层场景继续推进。`,
         },
       ],
       { once: true },
@@ -761,11 +716,14 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
 
     activeTab.value = 'memories';
     store.isMinimized = false;
+    const restoredTip = restoredPlugins.length > 0 ? `，已回滚：${restoredPlugins.join('/')}` : '';
     const clearedTip =
       clearedSubsequentFloors.length > 0
         ? `，已自动清除第 ${clearedSubsequentFloors.join('、')} 层的后续存档`
         : '';
-    toastr.success(`回溯完成（${sourceDescription}${clearedTip}），可在此查看或修改总结内容`);
+    toastr.success(
+      `回溯完成（已隐藏 ${hiddenCount} 层未来楼层，${sourceDescription}${restoredTip}${clearedTip}）`,
+    );
   } finally {
     isBusy.value = false;
     busySlotKey.value = null;

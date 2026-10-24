@@ -1,4 +1,4 @@
-import type { SlotItem } from './types';
+import type { ChatMessageSnapshotItem, SlotItem } from './types';
 
 export interface BaiBaiSnapshot {
   apiVersion?: number;
@@ -65,9 +65,22 @@ export interface BaiBaiBookApi {
 }
 
 export interface AutoCardUpdaterApi {
-  exportTableAsJson?: () => Record<string, unknown>;
+  exportTableAsJson?: () => Record<string, unknown> | string | null;
   restoreTableAsJson?: (json: string) => Promise<boolean>;
+  importTableAsJson?: (json: string, options?: { persist?: boolean; mode?: string }) => Promise<boolean>;
+  syncWorldbookEntries?: (options?: { createIfNeeded?: boolean }) => Promise<boolean>;
   refreshDataAndWorldbook?: () => Promise<boolean>;
+  getCurrentPlotPreset?: () => string;
+  switchPlotPreset?: (presetName: string) => boolean;
+  injectPlotPresetToCurrentChat?: (presetName: string) => boolean;
+  getTableLockState?: (sheetKey: string) => { rows?: number[]; cols?: number[]; cells?: string[] } | null;
+  setTableLockState?: (
+    sheetKey: string,
+    lockState: { rows?: number[]; cols?: number[]; cells?: string[] },
+    options?: { merge?: boolean },
+  ) => boolean;
+  getSpecialIndexLockEnabled?: (sheetKey: string) => boolean | null;
+  setSpecialIndexLockEnabled?: (sheetKey: string, enabled: boolean) => boolean;
   getStoryContext?: (maxTurns?: number) => string;
   getPresetNames?: () => string[];
   getPresets?: () => Array<string | { name?: string }>;
@@ -82,6 +95,8 @@ export interface HoraeApi {
   registerDataProvider?: (id: string, provider: () => unknown) => () => void;
   registerPort?: (definition: Record<string, unknown>) => () => void;
   refreshPorts?: (scope?: unknown) => void;
+  refreshAllDisplays?: () => void;
+  processChat?: () => void;
   getLatestState?: () => Record<string, unknown> | null;
 }
 
@@ -160,10 +175,60 @@ export function getMvuApi() {
   return undefined;
 }
 
+function getNativeChatArray(): Array<Record<string, unknown>> | undefined {
+  try {
+    const ctxChat = (
+      SillyTavern as unknown as { getContext?: () => { chat?: Array<Record<string, unknown>> } }
+    )?.getContext?.()?.chat;
+    if (Array.isArray(ctxChat)) return ctxChat;
+  } catch {
+    // ignore
+  }
+  try {
+    const directChat = SillyTavern?.chat as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(directChat)) return directChat;
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+const ACU_FLOOR_KEYS = [
+  'TavernDB_ACU_IsolatedData',
+  'TavernDB_ACU_Data',
+  'TavernDB_ACU_Summary',
+  'TavernDB_ACU_ModifiedKeys',
+  'TavernDB_ACU_Identity',
+  'acu_summary',
+  'table_summary',
+  'database_summary',
+] as const;
+
+export function hasDatabaseDataInChat(): boolean {
+  if (getDatabaseApi()) return true;
+  try {
+    const chat = getNativeChatArray();
+    if (!Array.isArray(chat)) return false;
+    return chat.some(m => {
+      if (!m || typeof m !== 'object') return false;
+      const extra = m.extra as Record<string, unknown> | undefined;
+      return Boolean(
+        m.TavernDB_ACU_IsolatedData ||
+          m.TavernDB_ACU_Data ||
+          m.TavernDB_ACU_Summary ||
+          extra?.TavernDB_ACU_IsolatedData ||
+          extra?.acu_summary,
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function hasHoraeDataInChat(): boolean {
   if (getHoraeApi()) return true;
   try {
-    const chat = SillyTavern?.chat as Array<Record<string, unknown>> | undefined;
+    const chat = getNativeChatArray();
     if (!Array.isArray(chat)) return false;
     return chat.some(m => Boolean(m?.horae_meta || (m?.extra as Record<string, unknown> | undefined)?.horae_meta));
   } catch {
@@ -173,7 +238,7 @@ export function hasHoraeDataInChat(): boolean {
 
 export function hasStSummarizeMemoryInChat(): boolean {
   try {
-    const chat = SillyTavern?.chat as Array<Record<string, unknown>> | undefined;
+    const chat = getNativeChatArray();
     if (!Array.isArray(chat)) return false;
     return chat.some(m => {
       const extra = m?.extra as Record<string, unknown> | undefined;
@@ -187,9 +252,26 @@ export function hasStSummarizeMemoryInChat(): boolean {
 export function hasMvuDataInChat(): boolean {
   try {
     const mvu = getMvuApi();
-    if (!mvu?.getMvuData) return false;
-    const latest = mvu.getMvuData({ type: 'message', message_id: 'latest' });
-    return Boolean(latest && latest.stat_data && Object.keys(latest.stat_data).length > 0);
+    if (mvu?.getMvuData) {
+      const latest = mvu.getMvuData({ type: 'message', message_id: 'latest' });
+      if (latest && latest.stat_data && Object.keys(latest.stat_data).length > 0) {
+        return true;
+      }
+      const chatData = mvu.getMvuData({ type: 'chat' });
+      if (chatData && chatData.stat_data && Object.keys(chatData.stat_data).length > 0) {
+        return true;
+      }
+    }
+    const chat = getNativeChatArray();
+    if (Array.isArray(chat)) {
+      return chat.some(m => {
+        const data = (m?.data ?? m?.variables) as Record<string, unknown> | undefined;
+        return Boolean(
+          data?.stat_data && typeof data.stat_data === 'object' && Object.keys(data.stat_data as object).length > 0,
+        );
+      });
+    }
+    return false;
   } catch {
     return false;
   }
@@ -197,8 +279,8 @@ export function hasMvuDataInChat(): boolean {
 
 export function detectInstalledMemoryPlugins(): DetectedPluginInfo[] {
   return [
-    { id: 'baibai', name: '柏宝书', available: Boolean(getBaiBaiApi()?.getFloor) },
-    { id: 'database', name: '记忆表格', available: Boolean(getDatabaseApi()) },
+    { id: 'baibai', name: '柏宝书', available: Boolean(getBaiBaiApi()?.getFloor || getBaiBaiApi()?.getSnapshot) },
+    { id: 'database', name: '数据库', available: hasDatabaseDataInChat() },
     { id: 'horae', name: 'Horae', available: hasHoraeDataInChat() },
     { id: 'st_memory', name: '酒馆总结', available: hasStSummarizeMemoryInChat() },
     { id: 'mvu', name: 'MVU变量', available: hasMvuDataInChat() },
@@ -211,18 +293,718 @@ export function getActivePluginNames(): string[] {
     .map(p => p.name);
 }
 
+function safeClone<T>(val: T): T {
+  if (val === null || val === undefined) return val;
+  try {
+    return JSON.parse(JSON.stringify(val)) as T;
+  } catch {
+    return val;
+  }
+}
+
 export function captureMvuSnapshot(floor: number): Record<string, unknown> | null {
   try {
     const mvu = getMvuApi();
-    if (!mvu?.getMvuData) return null;
-    const data = mvu.getMvuData({ type: 'message', message_id: floor });
-    if (data && data.stat_data && Object.keys(data.stat_data).length > 0) {
-      return JSON.parse(JSON.stringify(data));
+    if (mvu?.getMvuData) {
+      const floorData = mvu.getMvuData({ type: 'message', message_id: floor });
+      if (floorData && floorData.stat_data && Object.keys(floorData.stat_data).length > 0) {
+        return safeClone(floorData);
+      }
+      const latestData = mvu.getMvuData({ type: 'message', message_id: 'latest' });
+      if (latestData && latestData.stat_data && Object.keys(latestData.stat_data).length > 0) {
+        return safeClone(latestData);
+      }
+    }
+    const chat = getNativeChatArray();
+    for (let i = floor; i >= 0; i--) {
+      const rawMes = chat?.[i];
+      const data = (rawMes?.data ?? rawMes?.variables) as Record<string, unknown> | undefined;
+      if (data?.stat_data && typeof data.stat_data === 'object' && Object.keys(data.stat_data as object).length > 0) {
+        return safeClone({ stat_data: data.stat_data });
+      }
     }
   } catch {
     // ignore
   }
   return null;
+}
+
+export function captureMvuChatSnapshot(): Record<string, unknown> | null {
+  try {
+    const mvu = getMvuApi();
+    if (!mvu?.getMvuData) return null;
+    const chatData = mvu.getMvuData({ type: 'chat' });
+    if (chatData && chatData.stat_data && Object.keys(chatData.stat_data).length > 0) {
+      return safeClone(chatData);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function captureDatabaseSnapshot(): {
+  database_snapshot: string | null;
+  database_plot_preset: string | null;
+  database_locks_snapshot: Record<string, unknown> | null;
+} {
+  let database_snapshot: string | null = null;
+  let database_plot_preset: string | null = null;
+  let database_locks_snapshot: Record<string, unknown> | null = null;
+  try {
+    const dbApi = getDatabaseApi();
+    const exported = dbApi?.exportTableAsJson?.();
+    let parsedObj: Record<string, unknown> | null = null;
+    if (typeof exported === 'string' && exported.trim()) {
+      database_snapshot = exported.trim();
+      try {
+        parsedObj = JSON.parse(database_snapshot) as Record<string, unknown>;
+      } catch {
+        parsedObj = null;
+      }
+    } else if (exported && typeof exported === 'object' && Object.keys(exported).length > 0) {
+      parsedObj = exported as Record<string, unknown>;
+      database_snapshot = JSON.stringify(exported);
+    }
+    const preset = dbApi?.getCurrentPlotPreset?.();
+    if (typeof preset === 'string' && preset.trim()) {
+      database_plot_preset = preset.trim();
+    }
+    if (parsedObj && typeof dbApi?.getTableLockState === 'function') {
+      const locksMap: Record<string, unknown> = {};
+      for (const key of Object.keys(parsedObj)) {
+        if (!key.startsWith('sheet_')) continue;
+        const lockState = dbApi.getTableLockState(key);
+        const specialIdx = dbApi.getSpecialIndexLockEnabled?.(key) ?? null;
+        if (lockState || specialIdx !== null) {
+          locksMap[key] = safeClone({ lockState, specialIdx });
+        }
+      }
+      if (Object.keys(locksMap).length > 0) {
+        database_locks_snapshot = locksMap;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { database_snapshot, database_plot_preset, database_locks_snapshot };
+}
+
+export function captureTavernVariablesSnapshot(): {
+  chat_variables_snapshot: Record<string, unknown> | null;
+  character_variables_snapshot: Record<string, unknown> | null;
+} {
+  let chat_variables_snapshot: Record<string, unknown> | null = null;
+  let character_variables_snapshot: Record<string, unknown> | null = null;
+  try {
+    const chatVars = getVariables({ type: 'chat' });
+    if (chatVars && typeof chatVars === 'object') {
+      const cloned = safeClone(chatVars);
+      delete cloned.timeloop_archive_v2;
+      chat_variables_snapshot = cloned;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const charVars = getVariables({ type: 'character' });
+    if (charVars && typeof charVars === 'object') {
+      character_variables_snapshot = safeClone(charVars);
+    }
+  } catch {
+    // ignore
+  }
+  return { chat_variables_snapshot, character_variables_snapshot };
+}
+
+export function captureChatMetadataSnapshot(): Record<string, unknown> | null {
+  try {
+    const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
+    if (!meta || typeof meta !== 'object') return null;
+    const snap: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(meta)) {
+      if (k === 'timeloop_archive_v2' || k === 'variables') continue;
+      snap[k] = safeClone(v);
+    }
+    return Object.keys(snap).length > 0 ? snap : null;
+  } catch {
+    return null;
+  }
+}
+
+export function captureBaiBaiSnapshot(floor: number): Record<string, unknown> | null {
+  try {
+    const api = getBaiBaiApi();
+    if (!api?.getSnapshot) return null;
+    const snap = api.getSnapshot({ floor, at: 'after' });
+    if (snap && typeof snap === 'object') {
+      return safeClone(snap as unknown as Record<string, unknown>);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function captureHoraeSnapshot(floor: number): Record<string, unknown> | null {
+  try {
+    const chat = getNativeChatArray();
+    const floorsMeta: Record<string, unknown> = {};
+    if (Array.isArray(chat)) {
+      const upper = Math.min(floor, chat.length - 1);
+      for (let i = 0; i <= upper; i++) {
+        const rawMes = chat[i];
+        if (!rawMes) continue;
+        const meta = rawMes.horae_meta ?? (rawMes.extra as Record<string, unknown> | undefined)?.horae_meta;
+        if (meta && typeof meta === 'object') {
+          floorsMeta[String(i)] = safeClone(meta);
+        }
+      }
+    }
+    const latestState = safeClone(getHoraeApi()?.getLatestState?.() ?? null);
+    if (Object.keys(floorsMeta).length === 0 && !latestState) {
+      return null;
+    }
+    return {
+      floors: floorsMeta,
+      latestState,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function captureChatMessagesSnapshot(anchorFloor: number): ChatMessageSnapshotItem[] | null {
+  try {
+    const helperMsgs = getChatMessages(`0-${anchorFloor}`, { hide_state: 'all', include_swipes: false });
+    const nativeChat = getNativeChatArray();
+    if (!helperMsgs || helperMsgs.length === 0) return null;
+
+    return helperMsgs.map(msg => {
+      const fid = msg.message_id;
+      const rawMes = nativeChat?.[fid] ?? {};
+      const rawExtra = (rawMes.extra as Record<string, unknown> | undefined) ?? {};
+      const rawData = (rawMes.data as Record<string, unknown> | undefined) ?? {};
+      const horaeMeta = (rawMes.horae_meta ?? rawExtra.horae_meta ?? null) as Record<string, unknown> | null;
+
+      const acuMeta: Record<string, unknown> = {};
+      for (const key of ACU_FLOOR_KEYS) {
+        if (rawMes[key] !== undefined) {
+          acuMeta[key] = safeClone(rawMes[key]);
+        } else if (rawExtra[key] !== undefined) {
+          acuMeta[key] = safeClone(rawExtra[key]);
+        }
+      }
+
+      return {
+        message_id: fid,
+        name: msg.name,
+        role: msg.role,
+        is_hidden: Boolean(msg.is_hidden),
+        message: msg.message,
+        swipe_id: msg.swipe_id,
+        data: safeClone({ ...rawData, ...(msg.data ?? {}) }),
+        extra: safeClone({ ...rawExtra, ...(msg.extra ?? {}) }),
+        horae_meta: horaeMeta ? safeClone(horaeMeta) : null,
+        acu_meta: Object.keys(acuMeta).length > 0 ? acuMeta : null,
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function syncFloorVisibilityAndCleanPluginMeta(
+  slot: SlotItem,
+  maxFloor: number,
+  snapshotMap: Map<number, ChatMessageSnapshotItem>,
+  horaeFloorsMap: Record<string, unknown>,
+): Promise<number> {
+  const anchorFloor = slot.floor;
+  const nativeChat = getNativeChatArray();
+  const anchorMvuStat =
+    (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
+
+  // 1. 恢复 0 .. anchorFloor 的原生元数据
+  if (Array.isArray(nativeChat)) {
+    const upperAnchor = Math.min(anchorFloor, nativeChat.length - 1);
+    for (let i = 0; i <= upperAnchor; i++) {
+      const rawMes = nativeChat[i];
+      if (!rawMes || typeof rawMes !== 'object') continue;
+      const snapItem = snapshotMap.get(i);
+      const rawExtra = ((rawMes.extra as Record<string, unknown> | undefined) ?? {});
+      const rawData = ((rawMes.data as Record<string, unknown> | undefined) ?? {});
+
+      if (i === anchorFloor) {
+        rawMes.is_system = false;
+        rawMes.is_hidden = false;
+      } else if (snapItem && typeof snapItem.is_hidden === 'boolean') {
+        rawMes.is_system = snapItem.is_hidden;
+        rawMes.is_hidden = snapItem.is_hidden;
+      }
+
+      const wasOmitted = Boolean(snapItem?.extra?.bbs_omit || snapItem?.data?.bbs_omit);
+      if (!wasOmitted) {
+        delete rawMes.bbs_omit;
+        delete rawMes.timeloop_abandoned;
+        delete rawExtra.bbs_omit;
+        delete rawExtra.timeloop_abandoned;
+        delete rawData.bbs_omit;
+        delete rawData.timeloop_abandoned;
+      }
+
+      const savedHorae =
+        snapItem?.horae_meta ??
+        (horaeFloorsMap[String(i)] as Record<string, unknown> | undefined) ??
+        (rawExtra._timeloop_backup_horae_meta as Record<string, unknown> | undefined);
+      if (savedHorae && typeof savedHorae === 'object') {
+        rawMes.horae_meta = safeClone(savedHorae);
+        rawExtra.horae_meta = safeClone(savedHorae);
+      }
+
+      const savedAcu =
+        snapItem?.acu_meta ??
+        (rawExtra._timeloop_backup_acu as Record<string, unknown> | undefined);
+      if (savedAcu && typeof savedAcu === 'object') {
+        for (const [k, v] of Object.entries(savedAcu)) {
+          rawMes[k] = safeClone(v);
+        }
+      }
+
+      if (rawExtra._timeloop_backup_st_memory !== undefined && rawExtra.memory === undefined) {
+        rawExtra.memory = safeClone(rawExtra._timeloop_backup_st_memory);
+      }
+
+      rawMes.extra = rawExtra;
+      rawMes.data = rawData;
+    }
+  }
+
+  // 2. 处理 anchorFloor + 1 .. maxFloor：仅隐藏楼层（绝不删除），并隔离插件状态
+  let hiddenCount = 0;
+  if (Array.isArray(nativeChat) && maxFloor > anchorFloor) {
+    const upperMax = Math.min(maxFloor, nativeChat.length - 1);
+    for (let i = anchorFloor + 1; i <= upperMax; i++) {
+      const rawMes = nativeChat[i];
+      if (!rawMes || typeof rawMes !== 'object') continue;
+      hiddenCount++;
+
+      rawMes.is_system = true;
+      rawMes.is_hidden = true;
+      rawMes.bbs_omit = true;
+      rawMes.timeloop_abandoned = true;
+
+      const rawExtra = ((rawMes.extra as Record<string, unknown> | undefined) ?? {});
+      const rawData = ((rawMes.data as Record<string, unknown> | undefined) ?? {});
+      rawExtra.bbs_omit = true;
+      rawExtra.timeloop_abandoned = true;
+      rawData.bbs_omit = true;
+      rawData.timeloop_abandoned = true;
+
+      const currentHorae = rawMes.horae_meta ?? rawExtra.horae_meta;
+      if (currentHorae && !rawExtra._timeloop_backup_horae_meta) {
+        rawExtra._timeloop_backup_horae_meta = safeClone(currentHorae);
+      }
+      delete rawMes.horae_meta;
+      delete rawExtra.horae_meta;
+
+      if (rawExtra.memory !== undefined) {
+        if (rawExtra._timeloop_backup_st_memory === undefined) {
+          rawExtra._timeloop_backup_st_memory = safeClone(rawExtra.memory);
+        }
+        delete rawExtra.memory;
+      }
+
+      const acuBackup: Record<string, unknown> =
+        (rawExtra._timeloop_backup_acu as Record<string, unknown> | undefined) ?? {};
+      for (const key of ACU_FLOOR_KEYS) {
+        if (rawMes[key] !== undefined) {
+          if (acuBackup[key] === undefined) acuBackup[key] = safeClone(rawMes[key]);
+          delete rawMes[key];
+        }
+        if (rawExtra[key] !== undefined) {
+          if (acuBackup[key] === undefined) acuBackup[key] = safeClone(rawExtra[key]);
+          delete rawExtra[key];
+        }
+        if (rawData[key] !== undefined) {
+          if (acuBackup[key] === undefined) acuBackup[key] = safeClone(rawData[key]);
+          delete rawData[key];
+        }
+      }
+      if (Object.keys(acuBackup).length > 0) {
+        rawExtra._timeloop_backup_acu = acuBackup;
+      }
+
+      if (rawData.stat_data && !rawExtra._timeloop_backup_stat_data) {
+        rawExtra._timeloop_backup_stat_data = safeClone(rawData.stat_data);
+      }
+      if (anchorMvuStat) {
+        rawData.stat_data = safeClone(anchorMvuStat);
+      } else {
+        delete rawData.stat_data;
+      }
+
+      rawMes.extra = rawExtra;
+      rawMes.data = rawData;
+    }
+  }
+
+  return hiddenCount;
+}
+
+async function restoreSlotExternalPlugins(slot: SlotItem): Promise<string[]> {
+  const anchorFloor = slot.floor;
+  const restoredPlugins: string[] = [];
+
+  // (a) 恢复 龙血玄黄·数据库 (AutoCardUpdaterAPI)
+  const dbApi = getDatabaseApi();
+  if (dbApi) {
+    try {
+      let dbRestored = false;
+      if (slot.database_snapshot) {
+        if (typeof dbApi.restoreTableAsJson === 'function') {
+          dbRestored = Boolean(await dbApi.restoreTableAsJson(slot.database_snapshot));
+        }
+        if (!dbRestored && typeof dbApi.importTableAsJson === 'function') {
+          dbRestored = Boolean(await dbApi.importTableAsJson(slot.database_snapshot, { persist: false }));
+        }
+      }
+      if (slot.database_plot_preset) {
+        if (typeof dbApi.switchPlotPreset === 'function') {
+          dbApi.switchPlotPreset(slot.database_plot_preset);
+        } else if (typeof dbApi.injectPlotPresetToCurrentChat === 'function') {
+          dbApi.injectPlotPresetToCurrentChat(slot.database_plot_preset);
+        }
+      }
+      if (slot.database_locks_snapshot && typeof dbApi.setTableLockState === 'function') {
+        for (const [sheetKey, rawEntry] of Object.entries(slot.database_locks_snapshot)) {
+          const entry = rawEntry as {
+            lockState?: { rows?: number[]; cols?: number[]; cells?: string[] } | null;
+            specialIdx?: boolean | null;
+          };
+          if (entry?.lockState) {
+            dbApi.setTableLockState(sheetKey, entry.lockState, { merge: false });
+          }
+          if (typeof entry?.specialIdx === 'boolean' && typeof dbApi.setSpecialIndexLockEnabled === 'function') {
+            dbApi.setSpecialIndexLockEnabled(sheetKey, entry.specialIdx);
+          }
+        }
+      }
+      if (typeof dbApi.syncWorldbookEntries === 'function') {
+        await dbApi.syncWorldbookEntries({ createIfNeeded: true });
+        dbRestored = true;
+      } else if (typeof dbApi.refreshDataAndWorldbook === 'function') {
+        await dbApi.refreshDataAndWorldbook();
+        dbRestored = true;
+      }
+      if (dbRestored) {
+        restoredPlugins.push('数据库');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // (b) 恢复 MVU 变量与酒馆原生变量
+  const mvu = getMvuApi();
+  let varsRestored = false;
+  if (mvu?.replaceMvuData && (slot.mvu_snapshot || slot.mvu_chat_snapshot)) {
+    try {
+      if (slot.mvu_snapshot) {
+        await mvu.replaceMvuData(safeClone(slot.mvu_snapshot), { type: 'message', message_id: anchorFloor });
+        await mvu.replaceMvuData(safeClone(slot.mvu_snapshot), { type: 'message', message_id: 'latest' });
+      }
+      if (slot.mvu_chat_snapshot) {
+        await mvu.replaceMvuData(safeClone(slot.mvu_chat_snapshot), { type: 'chat' });
+      }
+      varsRestored = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (slot.chat_variables_snapshot) {
+    try {
+      const currentChatVars = getVariables({ type: 'chat' }) ?? {};
+      const preservedArchive = currentChatVars.timeloop_archive_v2;
+      const nextChatVars = safeClone(slot.chat_variables_snapshot);
+      if (preservedArchive !== undefined) {
+        nextChatVars.timeloop_archive_v2 = preservedArchive;
+      }
+      replaceVariables(nextChatVars, { type: 'chat' });
+      varsRestored = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (slot.character_variables_snapshot) {
+    try {
+      replaceVariables(safeClone(slot.character_variables_snapshot), { type: 'character' });
+      varsRestored = true;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (varsRestored) {
+    restoredPlugins.push('MVU/变量');
+  }
+
+  // (c) 恢复 chatMetadata 中的酒馆总结等状态
+  if (slot.chat_metadata_snapshot) {
+    try {
+      const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
+      if (meta && typeof meta === 'object') {
+        for (const [k, v] of Object.entries(slot.chat_metadata_snapshot)) {
+          if (k === 'timeloop_archive_v2' || k === 'variables') continue;
+          meta[k] = safeClone(v);
+        }
+        if (slot.chat_metadata_snapshot.memory !== undefined || slot.chat_metadata_snapshot.summarize !== undefined) {
+          restoredPlugins.push('酒馆总结');
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // (d) 恢复并刷新 Horae
+  const horaeApi = getHoraeApi();
+  if (horaeApi || hasHoraeDataInChat()) {
+    try {
+      horaeApi?.processChat?.();
+      horaeApi?.refreshAllDisplays?.();
+      horaeApi?.refreshPorts?.();
+      restoredPlugins.push('Horae');
+    } catch {
+      // ignore
+    }
+  }
+
+  // (e) 柏宝书通过 bbs_omit 标记已自动对齐到 anchorFloor，并派发消息变更事件通知重算
+  if (getBaiBaiApi()) {
+    try {
+      const evSource = (SillyTavern as unknown as { eventSource?: { emit?: (evt: string, ...args: unknown[]) => void } })
+        ?.eventSource;
+      const evTypes = (SillyTavern as unknown as { event_types?: Record<string, string> })?.event_types;
+      if (evSource?.emit && evTypes?.MESSAGE_EDITED) {
+        evSource.emit(evTypes.MESSAGE_EDITED, anchorFloor);
+      }
+    } catch {
+      // ignore
+    }
+    restoredPlugins.push('柏宝书');
+  }
+
+  try {
+    const ctx = (
+      SillyTavern as unknown as { getContext?: () => { saveChat?: () => Promise<void> | void } }
+    )?.getContext?.();
+    await ctx?.saveChat?.();
+  } catch {
+    // ignore
+  }
+
+  return restoredPlugins;
+}
+
+export async function hideRewoundFloorsAndRestoreAnchor(
+  slot: SlotItem,
+  maxFloor: number,
+): Promise<{
+  hiddenCount: number;
+  restoredPlugins: string[];
+}> {
+  const anchorFloor = slot.floor;
+  const nativeChat = getNativeChatArray();
+  const snapshotMap = new Map<number, ChatMessageSnapshotItem>();
+  if (Array.isArray(slot.chat_messages_snapshot)) {
+    for (const item of slot.chat_messages_snapshot) {
+      snapshotMap.set(item.message_id, item);
+    }
+  }
+
+  const horaeFloorsMap =
+    (slot.horae_snapshot as { floors?: Record<string, unknown> } | null)?.floors ?? {};
+
+  let hiddenCount = await syncFloorVisibilityAndCleanPluginMeta(
+    slot,
+    maxFloor,
+    snapshotMap,
+    horaeFloorsMap,
+  );
+
+  const anchorMvuStat =
+    (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
+
+  const allUpToAnchor = getChatMessages(`0-${anchorFloor}`, { hide_state: 'all', include_swipes: false });
+  const allAfterAnchor =
+    maxFloor > anchorFloor
+      ? getChatMessages(`${anchorFloor + 1}-${maxFloor}`, { hide_state: 'all', include_swipes: false })
+      : [];
+
+  const updatesToApply: Array<{
+    message_id: number;
+    is_hidden: boolean;
+    swipe_id?: number;
+    data?: Record<string, unknown>;
+    extra?: Record<string, unknown>;
+  }> = [];
+
+  for (const msg of allUpToAnchor) {
+    const fid = msg.message_id;
+    const snap = snapshotMap.get(fid);
+    const isAnchor = fid === anchorFloor;
+    const targetHidden = isAnchor ? false : snap && typeof snap.is_hidden === 'boolean' ? snap.is_hidden : Boolean(msg.is_hidden);
+
+    const nextData = safeClone({
+      ...(msg.data ?? {}),
+      ...(snap?.data ?? {}),
+    });
+    const wasOmitted = Boolean(snap?.extra?.bbs_omit || snap?.data?.bbs_omit);
+    if (!wasOmitted) {
+      delete nextData.bbs_omit;
+      delete nextData.timeloop_abandoned;
+    }
+    if (isAnchor && anchorMvuStat) {
+      nextData.stat_data = safeClone(anchorMvuStat);
+    }
+
+    const nextExtra = safeClone({
+      ...(msg.extra ?? {}),
+      ...(snap?.extra ?? {}),
+    });
+    if (!wasOmitted) {
+      delete nextExtra.bbs_omit;
+      delete nextExtra.timeloop_abandoned;
+    }
+    const savedHorae =
+      snap?.horae_meta ??
+      (horaeFloorsMap[String(fid)] as Record<string, unknown> | undefined);
+    if (savedHorae && typeof savedHorae === 'object') {
+      nextExtra.horae_meta = safeClone(savedHorae);
+    }
+
+    const updateEntry: {
+      message_id: number;
+      is_hidden: boolean;
+      swipe_id?: number;
+      data?: Record<string, unknown>;
+      extra?: Record<string, unknown>;
+    } = {
+      message_id: fid,
+      is_hidden: targetHidden,
+      data: nextData,
+      extra: nextExtra,
+    };
+    if (typeof snap?.swipe_id === 'number') {
+      updateEntry.swipe_id = snap.swipe_id;
+    }
+    updatesToApply.push(updateEntry);
+  }
+
+  for (const m of allAfterAnchor) {
+    const fid = m.message_id;
+    const rawMes = nativeChat?.[fid];
+    const nextData = safeClone({
+      ...(m.data ?? {}),
+      ...((rawMes?.data as Record<string, unknown> | undefined) ?? {}),
+      timeloop_abandoned: true,
+      bbs_omit: true,
+    });
+    if (anchorMvuStat) {
+      nextData.stat_data = safeClone(anchorMvuStat);
+    } else {
+      delete nextData.stat_data;
+    }
+
+    const nextExtra = safeClone({
+      ...(m.extra ?? {}),
+      ...((rawMes?.extra as Record<string, unknown> | undefined) ?? {}),
+      timeloop_abandoned: true,
+      bbs_omit: true,
+    });
+    delete nextExtra.horae_meta;
+    delete nextExtra.memory;
+    for (const key of ACU_FLOOR_KEYS) {
+      delete nextExtra[key];
+      delete nextData[key];
+    }
+
+    updatesToApply.push({
+      message_id: fid,
+      is_hidden: true,
+      data: nextData,
+      extra: nextExtra,
+    });
+  }
+
+  if (updatesToApply.length > 0) {
+    await setChatMessages(updatesToApply, { refresh: 'affected' });
+    hiddenCount = Math.max(hiddenCount, allAfterAnchor.length);
+  }
+
+  try {
+    const parentDoc = window.parent?.document ?? document;
+    if (Array.isArray(nativeChat)) {
+      const upperAnchor = Math.min(anchorFloor, nativeChat.length - 1);
+      for (let i = 0; i <= upperAnchor; i++) {
+        const rawMes = nativeChat[i];
+        const snap = snapshotMap.get(i);
+        const isAnchor = i === anchorFloor;
+        const targetHidden = isAnchor ? false : snap && typeof snap.is_hidden === 'boolean' ? snap.is_hidden : Boolean(rawMes?.is_hidden ?? rawMes?.is_system);
+        if (rawMes) {
+          rawMes.is_system = targetHidden;
+          rawMes.is_hidden = targetHidden;
+          const savedHorae =
+            snap?.horae_meta ??
+            (horaeFloorsMap[String(i)] as Record<string, unknown> | undefined) ??
+            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_horae_meta as Record<string, unknown> | undefined);
+          if (savedHorae) {
+            rawMes.horae_meta = safeClone(savedHorae);
+          }
+          const savedAcu =
+            snap?.acu_meta ??
+            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_acu as Record<string, unknown> | undefined);
+          if (savedAcu) {
+            for (const [k, v] of Object.entries(savedAcu)) {
+              rawMes[k] = safeClone(v);
+            }
+          }
+        }
+        const mesEl = parentDoc.querySelector(`#chat .mes[mesid="${i}"]`);
+        if (mesEl) {
+          mesEl.setAttribute('is_system', targetHidden ? 'true' : 'false');
+        }
+      }
+      for (let i = anchorFloor + 1; i <= maxFloor; i++) {
+        const rawMes = nativeChat[i];
+        if (rawMes) {
+          rawMes.is_system = true;
+          rawMes.is_hidden = true;
+          rawMes.bbs_omit = true;
+          delete rawMes.horae_meta;
+          for (const key of ACU_FLOOR_KEYS) {
+            delete rawMes[key];
+          }
+        }
+        const mesEl = parentDoc.querySelector(`#chat .mes[mesid="${i}"]`);
+        if (mesEl) {
+          mesEl.setAttribute('is_system', 'true');
+        }
+      }
+    }
+  } catch {
+    // ignore DOM sync errors
+  }
+
+  const restoredPlugins = await restoreSlotExternalPlugins(slot);
+
+  return {
+    hiddenCount,
+    restoredPlugins,
+  };
 }
 
 export function formatStructuredDelta(delta: unknown): string {
@@ -516,7 +1298,11 @@ export function buildDatabaseTableDiff(anchorSnapshotJson: string | null | undef
   if (!api?.exportTableAsJson) return '';
 
   try {
-    const currentData = api.exportTableAsJson();
+    const rawCurrent = api.exportTableAsJson();
+    const currentData =
+      typeof rawCurrent === 'string' && rawCurrent.trim()
+        ? (JSON.parse(rawCurrent) as Record<string, unknown>)
+        : (rawCurrent as Record<string, unknown> | null);
     if (!currentData || typeof currentData !== 'object') return '';
 
     const currentCompact = formatDatabaseTableCompact(currentData);

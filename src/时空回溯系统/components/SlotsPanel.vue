@@ -33,8 +33,10 @@
           <p class="tl-slot-preview">{{ slots[key]?.preview }}</p>
           <div class="tl-slot-meta">
             <span>记录于 {{ slots[key]?.timestamp }}</span>
-            <span v-if="slots[key]?.database_snapshot" class="tl-meta-tag">含表格快照</span>
-            <span v-if="slots[key]?.mvu_snapshot" class="tl-meta-tag">含变量快照</span>
+            <span v-if="slots[key]?.database_snapshot" class="tl-meta-tag">含数据库快照</span>
+            <span v-if="slots[key]?.baibai_snapshot" class="tl-meta-tag">含柏宝书快照</span>
+            <span v-if="slots[key]?.horae_snapshot" class="tl-meta-tag">含Horae快照</span>
+            <span v-if="slots[key]?.mvu_snapshot || slots[key]?.mvu_chat_snapshot" class="tl-meta-tag">含MVU快照</span>
           </div>
         </div>
         <div v-else class="tl-slot-empty">
