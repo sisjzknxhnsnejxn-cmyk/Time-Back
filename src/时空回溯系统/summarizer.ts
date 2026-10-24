@@ -108,7 +108,20 @@ export function cleanSummaryOutputText(text: string, tagOptions?: TagFilterOptio
   if (tagOptions && tagOptions.mode === 'strip') {
     output = applyTagFilter(output, tagOptions);
   }
-  return output.trim();
+  return output
+    .replace(/^```[\w-]*\s*/i, '')
+    .replace(/\s*```$/i, '')
+    // 移除 Markdown 标题符号，如 "### 【时空节点】" -> "【时空节点】" 或 "### 时空节点" -> "【时空节点】"
+    .replace(/^[ \t]*#{1,6}[ \t]*【([^】]+)】[ \t]*$/gm, '【$1】')
+    .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$/gm, '【$1】')
+    // 移除 Markdown 粗体/斜体包裹符号 **text** / __text__
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // 将行首 Markdown 无序列表 "- " 或 "* " 转换为纯文本圆点 "· "
+    .replace(/^[ \t]*[-*][ \t]+/gm, '· ')
+    // 移除行内残留的反引号
+    .replace(/`([^`]+)`/g, '$1')
+    .trim();
 }
 
 export interface BuildSummaryPromptsOptions {
@@ -360,11 +373,12 @@ export function buildChunkMapPrompt(params: {
   chunkText: string;
 }): { systemPrompt: string; userPrompt: string } {
   const userPrompt = `当前回溯区间（第 ${params.fromFloor} 层至第 ${params.toFloor} 层）内容较长，正在进行分段提炼（第 ${params.chunkIndex} / ${params.totalChunks} 段）。
-请客观、准确地提炼本段记录中的核心剧情事件、关键情报与因果线索、重要角色态度与状态变化。
+请客观、全面地提炼本段记录中的：1.具体时间节点与地点转移；2.核心事件经过与抉择因果；3.关键对话披露的秘密、约定或暗号；4.人物真实立场、关系与情感变化；5.重要物品道具、线索与身体状态变化；6.暴露的危机陷阱与结局走向。
 
 输出要求：
-1. 条理清晰，字数控制在 300-600 字左右；
-2. 严禁编造原文中不存在的剧情，直接输出提炼正文，不要带思考过程。
+1. 条理清晰，字数控制在 350-650 字左右；
+2. 严禁使用任何 Markdown 语法符号（不要使用 #、*、**、-、\` 等符号），使用纯文本与【】分段；
+3. 严禁编造原文中不存在的剧情，直接输出提炼正文，不要带思考过程或前缀。
 
 【本段记录（第 ${params.chunkIndex}/${params.totalChunks} 段）】
 ${params.chunkText}`;

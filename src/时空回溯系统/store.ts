@@ -181,6 +181,22 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
       parsed.summary_word_limit = '300-800';
     }
 
+    // 4. 若检测到旧版带 Markdown 格式（如 "- **时间与轨迹**"）的默认提示词，自动升级为新版非 Markdown 提示词
+    if (
+      !parsed.summary_user_prompt ||
+      parsed.summary_user_prompt.includes('**时间与轨迹**') ||
+      parsed.summary_user_prompt.includes('**关键事件与行动**')
+    ) {
+      parsed.summary_user_prompt = DEFAULT_SUMMARY_USER_PROMPT;
+    }
+    if (
+      !parsed.summary_system_prompt ||
+      (!parsed.summary_system_prompt.includes('严禁Markdown') &&
+        parsed.summary_system_prompt.includes('你是「时空回溯系统」的跨时间线客观记忆提炼官'))
+    ) {
+      parsed.summary_system_prompt = DEFAULT_SUMMARY_SYSTEM_PROMPT;
+    }
+
     if (!parsed.max_chunk_chars || parsed.max_chunk_chars < 1000) {
       parsed.max_chunk_chars = 32000;
     }
