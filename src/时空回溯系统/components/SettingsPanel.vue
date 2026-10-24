@@ -43,6 +43,47 @@
           </button>
         </div>
       </div>
+
+      <div class="tl-setting-row">
+        <span class="tl-row-label">屏幕悬浮球</span>
+        <div class="tl-seg-group">
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.floating_ball_mode === 'always' }"
+            @click="store.setFloatingBallMode('always')"
+          >
+            <span>常驻显示</span>
+          </button>
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.floating_ball_mode === 'minimized_only' }"
+            @click="store.setFloatingBallMode('minimized_only')"
+          >
+            <span>仅最小化时</span>
+          </button>
+          <button
+            type="button"
+            class="tl-seg-btn"
+            :class="{ active: store.settings.floating_ball_mode === 'off' }"
+            @click="store.setFloatingBallMode('off')"
+          >
+            <span>关闭</span>
+          </button>
+        </div>
+      </div>
+      <div class="tl-api-hint" style="margin-top: 6px;">
+        <template v-if="store.settings.floating_ball_mode === 'always'">
+          悬浮球常驻在酒馆界面边缘，支持用鼠标或手指自由拖动，松手后自动贴边吸附，点击即可打开时空回溯。
+        </template>
+        <template v-else-if="store.settings.floating_ball_mode === 'minimized_only'">
+          平时不显示悬浮球；点击窗口右上角「—」最小化或后台回溯总结时才会收起为可拖动贴边的悬浮球。
+        </template>
+        <template v-else>
+          已关闭悬浮球，仅通过酒馆快捷栏上的「↺ 时空回溯」按钮打开页面。
+        </template>
+      </div>
     </div>
 
     <div class="tl-setting-card">

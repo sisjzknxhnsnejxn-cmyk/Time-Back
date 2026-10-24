@@ -12,6 +12,8 @@ import {
   type ChatArchiveData,
   type ColorMode,
   type CustomApiPreset,
+  type FloatingBallMode,
+  type FloatingBallSide,
   type LoopMemoryItem,
   type SlotItem,
   type SlotKey,
@@ -40,6 +42,8 @@ export {
   type ChatArchiveData,
   type ColorMode,
   type CustomApiPreset,
+  type FloatingBallMode,
+  type FloatingBallSide,
   type LoopMemoryItem,
   type SlotItem,
   type SlotKey,
@@ -343,6 +347,19 @@ ${memoryBlocks}
     settings.value.theme_color = color;
   }
 
+  function setFloatingBallMode(mode: FloatingBallMode) {
+    settings.value.floating_ball_mode = mode;
+    if (mode === 'off' && isMinimized.value) {
+      isMinimized.value = false;
+      isModalOpen.value = false;
+    }
+  }
+
+  function updateFloatingBallPosition(side: FloatingBallSide, topPercent: number) {
+    settings.value.floating_ball_side = side;
+    settings.value.floating_ball_top_percent = Math.min(92, Math.max(5, Math.round(topPercent * 10) / 10));
+  }
+
   const activeCustomPreset = computed<CustomApiPreset>(() => {
     const list = settings.value.custom_api_presets;
     const found = list.find(p => p.id === settings.value.active_custom_api_id);
@@ -523,6 +540,8 @@ ${memoryBlocks}
     setColorMode,
     toggleColorMode,
     setThemeColor,
+    setFloatingBallMode,
+    updateFloatingBallPosition,
     setApiMode,
     selectCustomApiPreset,
     addCustomApiPreset,

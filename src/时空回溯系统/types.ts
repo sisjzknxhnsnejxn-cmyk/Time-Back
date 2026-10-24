@@ -1,5 +1,7 @@
 export const ThemeColorSchema = z.enum(['amber', 'cyan', 'rose', 'emerald']).default('amber');
 export const ColorModeSchema = z.enum(['dark', 'light']).default('dark');
+export const FloatingBallModeSchema = z.enum(['always', 'minimized_only', 'off']).default('always');
+export const FloatingBallSideSchema = z.enum(['left', 'right']).default('right');
 
 /**
  * 回溯总结的数据源模式：
@@ -26,6 +28,8 @@ export const TagFilterModeSchema = z.enum(['strip', 'extract', 'off']).default('
 
 export type ThemeColor = z.infer<typeof ThemeColorSchema>;
 export type ColorMode = z.infer<typeof ColorModeSchema>;
+export type FloatingBallMode = z.infer<typeof FloatingBallModeSchema>;
+export type FloatingBallSide = z.infer<typeof FloatingBallSideSchema>;
 export type SummarySourceMode = z.infer<typeof SummarySourceModeSchema>;
 export type ApiMode = z.infer<typeof ApiModeSchema>;
 export type TagFilterMode = z.infer<typeof TagFilterModeSchema>;
@@ -89,6 +93,9 @@ export const ApiSettingsSchema = z
     summary_user_prompt: z.string().default(DEFAULT_SUMMARY_USER_PROMPT),
     color_mode: ColorModeSchema,
     theme_color: ThemeColorSchema,
+    floating_ball_mode: FloatingBallModeSchema,
+    floating_ball_side: FloatingBallSideSchema,
+    floating_ball_top_percent: z.number().min(5).max(92).default(72),
   })
   .prefault({});
 

@@ -52,9 +52,10 @@
             </button>
 
             <button
+              v-if="store.settings.floating_ball_mode !== 'off'"
               type="button"
               class="tl-icon-btn"
-              title="最小化窗口（查看后方页面或弹窗）"
+              title="最小化为悬浮球（查看后方页面或弹窗）"
               aria-label="最小化窗口"
               @click="minimizeModal"
             >
@@ -139,29 +140,49 @@
       </div>
     </div>
 
-    <!-- 最小化悬浮胶囊：可随时查看后方页面与弹窗，点击立即恢复主窗口 -->
-    <div v-if="store.isModalOpen && store.isMinimized" class="timeloop-minimized-dock">
+    <!-- 可自由拖拽 & 自动贴边吸附的悬浮球（支持常驻显示 / 仅最小化时显示 / 后台回溯显示） -->
+    <div
+      v-if="showFloatingBall"
+      ref="floatingBallRef"
+      class="timeloop-minimized-dock"
+      :class="[
+        `is-side-${store.settings.floating_ball_side}`,
+        {
+          'is-dragging': isBallDragging,
+          'is-idle': isBallIdle && !isBusy && !isBallDragging,
+          'is-compact': !store.isMinimized && !isBusy,
+        },
+      ]"
+      :style="floatingBallStyle"
+      @pointerdown="onBallPointerDown"
+      @pointerenter="wakeUpFloatingBall"
+    >
       <button
         type="button"
         class="timeloop-minimized-pill"
         :class="{ 'is-busy': isBusy }"
-        title="点击恢复时空回溯窗口"
-        @click="restoreModal"
+        :title="isBusy ? '正在回溯总结中 · 点击展开（可按住拖动位置）' : '点击打开时空回溯（可按住自由拖动，松手自动贴边）'"
       >
         <span class="tl-pill-icon" :class="{ 'tl-spin': isBusy }">
           <FlatIcon name="loop" />
         </span>
         <span class="tl-pill-text">
-          {{ isBusy ? '正在回溯总结中 · 点击展开' : '时空回溯 · 点击展开' }}
+          {{
+            isBusy
+              ? '正在回溯总结中 · 点击展开'
+              : store.isMinimized
+                ? '时空回溯 · 点击展开'
+                : '时空回溯'
+          }}
         </span>
       </button>
       <button
-        v-if="!isBusy"
+        v-if="store.isMinimized && !isBusy && store.settings.floating_ball_mode === 'minimized_only'"
         type="button"
         class="timeloop-minimized-close"
         title="关闭时空回溯窗口"
         aria-label="关闭"
-        @click="closeModal"
+        @click.stop="closeModal"
       >
         <FlatIcon name="close" />
       </button>
@@ -266,22 +287,158 @@ function toggleModal() {
 function minimizeModal() {
   store.isHelpOpen = false;
   store.isMinimized = true;
+  scheduleBallIdle();
 }
 
 function restoreModal() {
   store.isMinimized = false;
+  store.openModal();
+}
+
+const floatingBallRef = ref<HTMLElement | null>(null);
+const isBallDragging = ref(false);
+const isBallIdle = ref(false);
+const ballDragPos = ref<{ x: number; y: number } | null>(null);
+let ballIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+const showFloatingBall = computed(() => {
+  // 主窗口完整展开时不显示悬浮球
+  if (store.isModalOpen && !store.isMinimized) return false;
+  // 后台正在执行回溯总结时强制显示悬浮球，防止找不到任务
+  if (isBusy.value) return true;
+  const mode = store.settings.floating_ball_mode;
+  if (mode === 'always') return true;
+  if (mode === 'minimized_only') return store.isModalOpen && store.isMinimized;
+  return false;
+});
+
+const floatingBallStyle = computed<Record<string, string>>(() => {
+  if (ballDragPos.value) {
+    return {
+      left: `${ballDragPos.value.x}px`,
+      top: `${ballDragPos.value.y}px`,
+      right: 'auto',
+      bottom: 'auto',
+    };
+  }
+  const topPct = Math.min(92, Math.max(5, store.settings.floating_ball_top_percent ?? 72));
+  if (store.settings.floating_ball_side === 'left') {
+    return {
+      left: 'max(0.65rem, env(safe-area-inset-left, 0.65rem))',
+      right: 'auto',
+      top: `${topPct}vh`,
+      bottom: 'auto',
+    };
+  }
+  return {
+    right: 'max(0.65rem, env(safe-area-inset-right, 0.65rem))',
+    left: 'auto',
+    top: `${topPct}vh`,
+    bottom: 'auto',
+  };
+});
+
+function scheduleBallIdle() {
+  if (ballIdleTimer) clearTimeout(ballIdleTimer);
+  isBallIdle.value = false;
+  ballIdleTimer = setTimeout(() => {
+    isBallIdle.value = true;
+  }, 3500);
+}
+
+function wakeUpFloatingBall() {
+  scheduleBallIdle();
+}
+
+function onBallPointerDown(e: PointerEvent) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('.timeloop-minimized-close')) return;
+
+  const el = floatingBallRef.value;
+  if (!el) return;
+
+  wakeUpFloatingBall();
+
+  const viewWin = el.ownerDocument?.defaultView || window.parent || window;
+  const rect = el.getBoundingClientRect();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startLeft = rect.left;
+  const startTop = rect.top;
+  const width = rect.width || 110;
+  const height = rect.height || 40;
+  let moved = false;
+
+  try {
+    el.setPointerCapture(e.pointerId);
+  } catch {
+    // ignore
+  }
+
+  const onPointerMove = (ev: PointerEvent) => {
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (!moved && Math.hypot(dx, dy) < 6) return;
+    moved = true;
+    isBallDragging.value = true;
+
+    const vw = Math.max(viewWin.innerWidth || 360, 200);
+    const vh = Math.max(viewWin.innerHeight || 640, 200);
+    const nextX = Math.min(vw - width - 6, Math.max(6, startLeft + dx));
+    const nextY = Math.min(vh - height - 6, Math.max(6, startTop + dy));
+    ballDragPos.value = { x: nextX, y: nextY };
+  };
+
+  const onPointerUp = (ev: PointerEvent) => {
+    el.removeEventListener('pointermove', onPointerMove);
+    el.removeEventListener('pointerup', onPointerUp);
+    el.removeEventListener('pointercancel', onPointerUp);
+    try {
+      if (el.hasPointerCapture(ev.pointerId)) {
+        el.releasePointerCapture(ev.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!moved) {
+      isBallDragging.value = false;
+      ballDragPos.value = null;
+      restoreModal();
+      return;
+    }
+
+    const vw = Math.max(viewWin.innerWidth || 360, 200);
+    const vh = Math.max(viewWin.innerHeight || 640, 200);
+    const finalPos = ballDragPos.value || { x: startLeft, y: startTop };
+    const centerX = finalPos.x + width / 2;
+    const side = centerX < vw / 2 ? 'left' : 'right';
+    const topPercent = (finalPos.y / vh) * 100;
+
+    store.updateFloatingBallPosition(side, topPercent);
+    isBallDragging.value = false;
+    ballDragPos.value = null;
+    scheduleBallIdle();
+  };
+
+  el.addEventListener('pointermove', onPointerMove);
+  el.addEventListener('pointerup', onPointerUp);
+  el.addEventListener('pointercancel', onPointerUp);
 }
 
 function closeModal() {
   if (isBusy.value) {
     store.isHelpOpen = false;
     store.isMinimized = true;
-    toastr.info('回溯总结正在后台运行，已收起至右下角，可自由查看后方页面与弹窗');
+    scheduleBallIdle();
+    toastr.info('回溯总结正在后台运行，已收起为悬浮球，可自由查看后方页面与弹窗');
     return;
   }
   store.isHelpOpen = false;
   store.isMinimized = false;
   store.isModalOpen = false;
+  scheduleBallIdle();
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -665,12 +822,14 @@ onMounted(() => {
   checkQrBarButton();
   qrCheckTimer = setTimeout(checkQrBarButton, 600);
   registerHorae();
+  scheduleBallIdle();
   window.parent.document.addEventListener('keydown', handleKeydown);
   window.document.addEventListener('keydown', handleKeydown);
 });
 
 onUnmounted(() => {
   if (qrCheckTimer) clearTimeout(qrCheckTimer);
+  if (ballIdleTimer) clearTimeout(ballIdleTimer);
   if (savedFeedbackTimer) clearTimeout(savedFeedbackTimer);
   window.parent.document.removeEventListener('keydown', handleKeydown);
   window.document.removeEventListener('keydown', handleKeydown);
