@@ -2,6 +2,10 @@
   display: contents;
 }
 
+#toast-container {
+  z-index: 2147483640 !important;
+}
+
 .timeloop-qr-btn {
   display: inline-flex !important;
   align-items: center;
@@ -153,7 +157,7 @@
 [script_id] .timeloop-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2147483000;
+  z-index: 9000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -163,6 +167,86 @@
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-sizing: border-box;
+}
+
+/* 最小化悬浮胶囊 */
+[script_id] .timeloop-minimized-dock {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right, 1rem));
+  bottom: max(4.5rem, calc(env(safe-area-inset-bottom, 0px) + 4.2rem));
+  z-index: 8990;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem;
+  border-radius: 999px;
+  border: 1px solid var(--tl-accent-border);
+  background: var(--tl-modal-bg);
+  box-shadow: var(--tl-shadow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+[script_id] .timeloop-minimized-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.85rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--tl-accent-soft);
+  color: var(--tl-accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.15s ease,
+    transform 0.12s ease;
+
+  &:hover {
+    background: var(--tl-accent);
+    color: #fff;
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.is-busy {
+    background: var(--tl-accent);
+    color: #fff;
+  }
+}
+
+[script_id] .tl-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[script_id] .timeloop-minimized-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tl-text-sec);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+
+  &:hover {
+    background: var(--tl-danger-soft);
+    color: var(--tl-danger);
+  }
 }
 
 [script_id] .timeloop-modal {
@@ -1243,9 +1327,9 @@
 
 /* 说明书弹窗 (? HelpModal) */
 [script_id] .tl-help-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 9510;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1259,7 +1343,8 @@
   display: flex;
   flex-direction: column;
   width: min(520px, 100%);
-  max-height: 90%;
+  max-height: min(85vh, 680px);
+  max-height: min(85dvh, 680px);
   border: 1px solid var(--tl-border);
   border-radius: 14px;
   background: var(--tl-modal-bg);
@@ -1475,7 +1560,8 @@
 
   [script_id] .tl-help-sheet {
     width: 100%;
-    max-height: 92%;
+    max-height: 88vh;
+    max-height: 88dvh;
     border-radius: 18px 18px 0 0;
     border-left: none;
     border-right: none;

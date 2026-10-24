@@ -226,6 +226,7 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
   const settings = ref<ApiSettings>(loadInitialSettings());
   const chatData = ref<ChatArchiveData>(loadChatArchiveFor(currentChatId.value));
   const isModalOpen = ref(false);
+  const isMinimized = ref(false);
   const isHelpOpen = ref(false);
   const latestMemoryId = ref<string | null>(null);
 
@@ -512,6 +513,7 @@ ${memoryBlocks}
     currentChatId,
     occupiedSlotCount,
     isModalOpen,
+    isMinimized,
     isHelpOpen,
     latestMemoryId,
     refreshChatSlots,

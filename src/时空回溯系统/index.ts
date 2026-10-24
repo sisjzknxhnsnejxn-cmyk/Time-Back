@@ -31,18 +31,65 @@ function init() {
 
   const store = useTimeLoopStore(pinia);
 
-  const qrBtnListener = eventOn(getButtonEvent(QR_BUTTON_NAME), () => {
+  let lastTriggerTime = 0;
+  const handleQrButtonTrigger = (forceOpen?: boolean) => {
+    const now = Date.now();
+    if (now - lastTriggerTime < 220) return;
+    lastTriggerTime = now;
+
     store.refreshChatSlots();
-    store.isModalOpen = !store.isModalOpen;
-  });
+    if (typeof forceOpen === 'boolean') {
+      store.isMinimized = false;
+      store.isModalOpen = forceOpen;
+    } else if (!store.isModalOpen) {
+      store.isMinimized = false;
+      store.isModalOpen = true;
+    } else if (store.isMinimized) {
+      store.isMinimized = false;
+    } else {
+      store.isHelpOpen = false;
+      store.isModalOpen = false;
+    }
+  };
+
+  let qrBtnListener: { stop: () => void } | null = null;
+  try {
+    qrBtnListener = eventOn(getButtonEvent(QR_BUTTON_NAME), () => {
+      handleQrButtonTrigger();
+    });
+  } catch (e) {
+    console.warn('[TimeLoop] 监听脚本按钮事件失败', e);
+  }
+
+  const win = window as Window & {
+    __TIMELOOP_REGISTER_TOGGLE__?: (fn: (forceOpen?: boolean) => void) => void;
+  };
+  if (typeof win.__TIMELOOP_REGISTER_TOGGLE__ === 'function') {
+    win.__TIMELOOP_REGISTER_TOGGLE__(handleQrButtonTrigger);
+  }
+
+  // DOM 级点击兜底：防止云端异步加载后部分环境下 getButtonEvent 映射失效
+  const onParentQrClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const btn = target.closest('#qr--bar .qr--button, #qr--bar button') as HTMLElement | null;
+    if (!btn || btn.classList.contains('timeloop-qr-btn')) return;
+    if (btn.textContent && btn.textContent.includes('时空回溯')) {
+      setTimeout(() => {
+        handleQrButtonTrigger();
+      }, 45);
+    }
+  };
+  parentDoc.addEventListener('click', onParentQrClick, true);
 
   const chatChangeListener = eventOn(tavern_events.CHAT_CHANGED, () => {
     store.refreshChatSlots();
   });
 
   const cleanup = () => {
-    qrBtnListener.stop();
+    qrBtnListener?.stop();
     chatChangeListener.stop();
+    parentDoc.removeEventListener('click', onParentQrClick, true);
     app.unmount();
     $container.remove();
     styleTeleporter.destroy();

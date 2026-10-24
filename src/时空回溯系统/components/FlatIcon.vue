@@ -132,6 +132,11 @@
     <template v-else-if="name === 'bolt'">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </template>
+
+    <!-- 最小化/收起窗口 -->
+    <template v-else-if="name === 'minimize'">
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </template>
   </svg>
 </template>
 
@@ -154,7 +159,8 @@ export type FlatIconName =
   | 'copy'
   | 'refresh'
   | 'folder'
-  | 'bolt';
+  | 'bolt'
+  | 'minimize';
 
 defineProps<{
   name: FlatIconName;

@@ -19,7 +19,7 @@
     </Teleport>
 
     <!-- 主模态框 -->
-    <div v-if="store.isModalOpen" class="timeloop-overlay" @click.self="closeModal">
+    <div v-if="store.isModalOpen && !store.isMinimized" class="timeloop-overlay" @click.self="closeModal">
       <div class="timeloop-modal" @click.stop>
         <!-- 顶部栏 -->
         <header class="timeloop-header">
@@ -53,9 +53,19 @@
 
             <button
               type="button"
+              class="tl-icon-btn"
+              title="最小化窗口（查看后方页面或弹窗）"
+              aria-label="最小化窗口"
+              @click="minimizeModal"
+            >
+              <FlatIcon name="minimize" />
+            </button>
+
+            <button
+              type="button"
               class="tl-icon-btn tl-close-btn"
-              title="关闭"
-              aria-label="关闭"
+              :title="isBusy ? '后台运行并收起窗口' : '关闭'"
+              :aria-label="isBusy ? '后台运行并收起窗口' : '关闭'"
               @click="closeModal"
             >
               <FlatIcon name="close" />
@@ -127,6 +137,34 @@
         <!-- 说明书弹窗 -->
         <HelpModal :open="store.isHelpOpen" @close="store.isHelpOpen = false" />
       </div>
+    </div>
+
+    <!-- 最小化悬浮胶囊：可随时查看后方页面与弹窗，点击立即恢复主窗口 -->
+    <div v-if="store.isModalOpen && store.isMinimized" class="timeloop-minimized-dock">
+      <button
+        type="button"
+        class="timeloop-minimized-pill"
+        :class="{ 'is-busy': isBusy }"
+        title="点击恢复时空回溯窗口"
+        @click="restoreModal"
+      >
+        <span class="tl-pill-icon" :class="{ 'tl-spin': isBusy }">
+          <FlatIcon name="loop" />
+        </span>
+        <span class="tl-pill-text">
+          {{ isBusy ? '正在回溯总结中 · 点击展开' : '时空回溯 · 点击展开' }}
+        </span>
+      </button>
+      <button
+        v-if="!isBusy"
+        type="button"
+        class="timeloop-minimized-close"
+        title="关闭时空回溯窗口"
+        aria-label="关闭"
+        @click="closeModal"
+      >
+        <FlatIcon name="close" />
+      </button>
     </div>
   </div>
 </template>
@@ -211,24 +249,52 @@ const activePlugins = computed(() => {
 
 function toggleModal() {
   store.refreshChatSlots();
-  store.isModalOpen = !store.isModalOpen;
+  if (!store.isModalOpen) {
+    store.isMinimized = false;
+    store.isModalOpen = true;
+  } else if (store.isMinimized) {
+    store.isMinimized = false;
+  } else if (isBusy.value) {
+    store.isHelpOpen = false;
+    store.isMinimized = true;
+  } else {
+    store.isHelpOpen = false;
+    store.isModalOpen = false;
+  }
+}
+
+function minimizeModal() {
+  store.isHelpOpen = false;
+  store.isMinimized = true;
+}
+
+function restoreModal() {
+  store.isMinimized = false;
 }
 
 function closeModal() {
-  if (isBusy.value) return;
+  if (isBusy.value) {
+    store.isHelpOpen = false;
+    store.isMinimized = true;
+    toastr.info('回溯总结正在后台运行，已收起至右下角，可自由查看后方页面与弹窗');
+    return;
+  }
   store.isHelpOpen = false;
+  store.isMinimized = false;
   store.isModalOpen = false;
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape' || !store.isModalOpen) return;
+  if (e.key !== 'Escape' || !store.isModalOpen || store.isMinimized) return;
   if (store.isHelpOpen) {
     e.stopPropagation();
     store.isHelpOpen = false;
     return;
   }
-  if (!isBusy.value) {
-    e.stopPropagation();
+  e.stopPropagation();
+  if (isBusy.value) {
+    minimizeModal();
+  } else {
     closeModal();
   }
 }
@@ -563,6 +629,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
     );
 
     activeTab.value = 'memories';
+    store.isMinimized = false;
     const clearedTip =
       clearedSubsequentFloors.length > 0
         ? `，已自动清除第 ${clearedSubsequentFloors.join('、')} 层的后续存档`
