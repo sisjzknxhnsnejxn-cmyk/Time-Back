@@ -11,7 +11,7 @@
         type="button"
         class="qr--button menu_button interactable timeloop-qr-btn"
         title="打开时空回溯系统"
-        @click="toggleModal"
+        @click.stop="toggleModal"
       >
         <span class="timeloop-qr-symbol">↺</span>
         <span>时空回溯</span>
@@ -19,7 +19,7 @@
     </Teleport>
 
     <!-- 主模态框 -->
-    <div v-if="store.isModalOpen && !store.isMinimized" class="timeloop-overlay" @click.self="closeModal">
+    <div v-if="store.isModalOpen && !store.isMinimized" class="timeloop-overlay" @click.self="onOverlayClick">
       <div class="timeloop-modal" @click.stop>
         <!-- 顶部栏 -->
         <header class="timeloop-header">
@@ -269,19 +269,14 @@ const activePlugins = computed(() => {
 });
 
 function toggleModal() {
-  store.refreshChatSlots();
-  if (!store.isModalOpen) {
-    store.isMinimized = false;
-    store.isModalOpen = true;
-  } else if (store.isMinimized) {
-    store.isMinimized = false;
-  } else if (isBusy.value) {
-    store.isHelpOpen = false;
-    store.isMinimized = true;
-  } else {
-    store.isHelpOpen = false;
-    store.isModalOpen = false;
+  store.openModal();
+}
+
+function onOverlayClick() {
+  if (Date.now() - store.lastOpenedAt < 380) {
+    return;
   }
+  closeModal();
 }
 
 function minimizeModal() {

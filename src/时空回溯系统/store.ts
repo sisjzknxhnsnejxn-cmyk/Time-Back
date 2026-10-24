@@ -232,6 +232,7 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
   const isModalOpen = ref(false);
   const isMinimized = ref(false);
   const isHelpOpen = ref(false);
+  const lastOpenedAt = ref(0);
   const latestMemoryId = ref<string | null>(null);
 
   const occupiedSlotCount = computed(() => {
@@ -358,6 +359,13 @@ ${memoryBlocks}
   function updateFloatingBallPosition(side: FloatingBallSide, topPercent: number) {
     settings.value.floating_ball_side = side;
     settings.value.floating_ball_top_percent = Math.min(92, Math.max(5, Math.round(topPercent * 10) / 10));
+  }
+
+  function openModal() {
+    lastOpenedAt.value = Date.now();
+    isMinimized.value = false;
+    isModalOpen.value = true;
+    refreshChatSlots();
   }
 
   const activeCustomPreset = computed<CustomApiPreset>(() => {
@@ -532,7 +540,9 @@ ${memoryBlocks}
     isModalOpen,
     isMinimized,
     isHelpOpen,
+    lastOpenedAt,
     latestMemoryId,
+    openModal,
     refreshChatSlots,
     syncMemoryInjection,
     persistSettings,

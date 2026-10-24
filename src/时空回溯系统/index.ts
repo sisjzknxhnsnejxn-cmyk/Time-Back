@@ -32,24 +32,14 @@ function init() {
   const store = useTimeLoopStore(pinia);
 
   let lastTriggerTime = 0;
-  const handleQrButtonTrigger = (forceOpen?: boolean) => {
+  const handleQrButtonTrigger = () => {
     const now = Date.now();
-    if (now - lastTriggerTime < 220) return;
+    store.lastOpenedAt = now;
+    store.isMinimized = false;
+    store.isModalOpen = true;
+    if (now - lastTriggerTime < 350) return;
     lastTriggerTime = now;
-
     store.refreshChatSlots();
-    if (typeof forceOpen === 'boolean') {
-      store.isMinimized = false;
-      store.isModalOpen = forceOpen;
-    } else if (!store.isModalOpen) {
-      store.isMinimized = false;
-      store.isModalOpen = true;
-    } else if (store.isMinimized) {
-      store.isMinimized = false;
-    } else {
-      store.isHelpOpen = false;
-      store.isModalOpen = false;
-    }
   };
 
   let qrBtnListener: { stop: () => void } | null = null;
@@ -75,9 +65,7 @@ function init() {
     const btn = target.closest('#qr--bar .qr--button, #qr--bar button') as HTMLElement | null;
     if (!btn || btn.classList.contains('timeloop-qr-btn')) return;
     if (btn.textContent && btn.textContent.includes('时空回溯')) {
-      setTimeout(() => {
-        handleQrButtonTrigger();
-      }, 45);
+      handleQrButtonTrigger();
     }
   };
   parentDoc.addEventListener('click', onParentQrClick, true);
