@@ -192,14 +192,17 @@ import {
   captureChatMessagesSnapshot,
   captureChatMetadataSnapshot,
   captureDatabaseSnapshot,
+  captureEngramSnapshot,
   captureHoraeSnapshot,
   captureMvuChatSnapshot,
   captureMvuSnapshot,
+  captureQqjSnapshot,
   captureTavernVariablesSnapshot,
   getActivePluginNames,
   getHoraeApi,
   hideRewoundFloorsAndRestoreAnchor,
   normalizeOpenAiBaseUrl,
+  preloadExternalPluginMemoriesForSummary,
 } from './plugins';
 import { useTimeLoopStore, type SlotKey } from './store';
 import {
@@ -494,6 +497,10 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
   const baibaiSnap = captureBaiBaiSnapshot(floor);
   const horaeSnap = captureHoraeSnapshot(floor);
   const chatMsgsSnap = captureChatMessagesSnapshot(floor);
+  const [engramSnap, qqjSnap] = await Promise.all([
+    captureEngramSnapshot().catch(() => null),
+    captureQqjSnapshot().catch(() => null),
+  ]);
 
   store.chatData.timeloop_slots[key] = {
     floor,
@@ -509,6 +516,8 @@ const saveSlot = errorCatched(async (key: SlotKey) => {
     chat_metadata_snapshot: chatMetaSnap,
     baibai_snapshot: baibaiSnap,
     horae_snapshot: horaeSnap,
+    engram_snapshot: engramSnap,
+    qqj_snapshot: qqjSnap,
     chat_messages_snapshot: chatMsgsSnap,
   };
   store.persistChatArchive();
@@ -598,6 +607,11 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
     const char = SillyTavern?.name2 || '角色';
     const user = SillyTavern?.name1 || '主角';
 
+    const preloadedMemories =
+      store.settings.summary_source_mode !== 'raw_floors'
+        ? await preloadExternalPluginMemoriesForSummary().catch(() => null)
+        : null;
+
     const promptOptions: BuildSummaryPromptsOptions = {
       messages: raw,
       slot,
@@ -611,6 +625,7 @@ const rewindToSlot = errorCatched(async (key: SlotKey) => {
       userPromptTemplate: store.settings.summary_user_prompt,
       tagFilterMode: tagOptions.mode,
       customFilterTags: tagOptions.tagsInput,
+      preloadedMemories,
     };
 
     const built = buildSummaryPrompts(promptOptions);

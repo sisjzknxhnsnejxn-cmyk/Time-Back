@@ -1,14 +1,19 @@
 import {
   buildBaiBaiSnapshotDiff,
   buildDatabaseTableDiff,
+  buildEngramSnapshotDiff,
   buildMvuSnapshotDiff,
+  buildQqjSnapshotDiff,
   extractDatabaseFloorMeta,
+  extractEngramFloorMeta,
   extractHoraeFloorMeta,
+  extractQqjFloorMeta,
   extractStSummarizeFloorMeta,
   formatStructuredDelta,
   getActivePluginNames,
   getBaiBaiApi,
   getDatabaseApi,
+  type PreloadedPluginMemoryContext,
 } from './plugins';
 import {
   DEFAULT_SUMMARY_SYSTEM_PROMPT,
@@ -137,6 +142,7 @@ export interface BuildSummaryPromptsOptions {
   userPromptTemplate: string;
   tagFilterMode?: TagFilterMode;
   customFilterTags?: string;
+  preloadedMemories?: PreloadedPluginMemoryContext | null;
 }
 
 export interface BuiltSummaryPrompts {
@@ -160,13 +166,20 @@ export function buildSummaryPrompts(options: BuildSummaryPromptsOptions): BuiltS
     wordLimit,
     systemPromptTemplate,
     userPromptTemplate,
+    preloadedMemories,
   } = options;
 
   const fromFloor = slot.floor + 1;
   const toFloor = currentFloor;
 
   const baibai = getBaiBaiApi();
-  const activePluginNames = getActivePluginNames();
+  const activePluginNames = [...getActivePluginNames()];
+  if (preloadedMemories?.qqj && !activePluginNames.includes('千千结/千事')) {
+    activePluginNames.push('千千结/千事');
+  }
+  if (preloadedMemories?.engram && !activePluginNames.includes('Engram记忆')) {
+    activePluginNames.push('Engram记忆');
+  }
   const pluginLabel = activePluginNames.length > 0 ? activePluginNames.join(' + ') : '无外部插件（使用聊天原文）';
 
   const modeNameMap: Record<SummarySourceMode, string> = {
@@ -220,6 +233,12 @@ export function buildSummaryPrompts(options: BuildSummaryPromptsOptions): BuiltS
       const horaeNote = extractHoraeFloorMeta(floorId);
       if (horaeNote) pluginNotes.push(`[${horaeNote}]`);
 
+      const qqjNote = extractQqjFloorMeta(floorId, preloadedMemories);
+      if (qqjNote) pluginNotes.push(`[${qqjNote}]`);
+
+      const engramNote = extractEngramFloorMeta(floorId, preloadedMemories);
+      if (engramNote) pluginNotes.push(`[${engramNote}]`);
+
       const stSumNote = extractStSummarizeFloorMeta(floorId, m);
       if (stSumNote) pluginNotes.push(`[${stSumNote}]`);
     }
@@ -258,6 +277,12 @@ export function buildSummaryPrompts(options: BuildSummaryPromptsOptions): BuiltS
 
     const dbDiff = buildDatabaseTableDiff(slot.database_snapshot);
     if (dbDiff) deltaSections.push(dbDiff);
+
+    const qqjDiff = buildQqjSnapshotDiff(slot, slot.floor, currentFloor, preloadedMemories);
+    if (qqjDiff) deltaSections.push(qqjDiff);
+
+    const engramDiff = buildEngramSnapshotDiff(slot, slot.floor, currentFloor, preloadedMemories);
+    if (engramDiff) deltaSections.push(engramDiff);
 
     const mvuDiff = buildMvuSnapshotDiff(slot, currentFloor);
     if (mvuDiff) deltaSections.push(mvuDiff);

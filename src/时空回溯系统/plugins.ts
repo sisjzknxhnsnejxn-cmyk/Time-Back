@@ -101,15 +101,225 @@ export interface HoraeApi {
 }
 
 export interface DetectedPluginInfo {
-  id: 'baibai' | 'database' | 'horae' | 'st_memory' | 'mvu';
+  id: 'baibai' | 'database' | 'horae' | 'st_memory' | 'mvu' | 'qqj' | 'engram';
   name: string;
   available: boolean;
+}
+
+export interface EngramEventNode {
+  id: string;
+  summary: string;
+  structured_kv?: {
+    time_anchor?: string;
+    role?: string[];
+    location?: string | string[];
+    event?: string;
+    logic?: string[];
+    causality?: string;
+    score?: number;
+  };
+  embedding?: number[];
+  is_embedded?: boolean;
+  is_archived?: boolean;
+  significance_score?: number;
+  level?: number;
+  parent_id?: string | null;
+  source_range?: {
+    start_index: number;
+    end_index: number;
+  };
+  is_locked?: boolean;
+  timestamp?: number;
+}
+
+export interface EngramEntityNode {
+  id: string;
+  name: string;
+  type: string;
+  aliases?: string[];
+  description?: string;
+  profile?: Record<string, unknown>;
+  is_archived?: boolean;
+  last_updated_at?: number;
+  embedding?: number[];
+  is_embedded?: boolean;
+  is_locked?: boolean;
+  layout_x?: number;
+  layout_y?: number;
+}
+
+export interface EngramSnapshotData {
+  chatId: string;
+  capturedAt: number;
+  events: EngramEventNode[];
+  entities: EngramEntityNode[];
+  meta: Record<string, unknown>;
+  extensionMeta?: Record<string, unknown> | null;
+}
+
+export interface QqjMemoryFloorItem {
+  floorId?: string;
+  messageIndex: number;
+  assistantSeq?: number;
+  summary?: string;
+  updatedAt?: string;
+  events?: Array<{ title?: string; summary?: string; importance?: string; participants?: string[] }>;
+  actions?: Array<{ actor?: string; action?: string; target?: string; outcome?: string }>;
+  commitments?: Array<{ actor?: string; content?: string; target?: string; timing?: string; status?: string }>;
+  openLoops?: string[];
+  relationshipShift?: Array<{ pair?: string[]; summary?: string }>;
+  knowledgeBoundaries?: Array<{ subject?: string; knows?: string[]; doesNotKnow?: string[] }>;
+  chronologyAnchor?: { explicitRef?: string; relativeOrder?: string };
+}
+
+export interface QqjPublicSnapshot {
+  version?: string;
+  status?: {
+    ready?: boolean;
+    blocked?: boolean;
+    needsReview?: boolean;
+    reason?: string;
+    identity?: {
+      stChatId?: string;
+      qqjChatId?: string;
+      characterName?: string;
+    };
+  };
+  memory?: {
+    coverage?: {
+      complete?: boolean;
+      missingAssistantSeqs?: number[];
+      floorCount?: number;
+      sealedFloorCount?: number;
+    };
+    floors?: QqjMemoryFloorItem[];
+  };
+  cse?: {
+    currentSubjects?: Array<{
+      entityId?: string;
+      subjectName: string;
+      coreState?: string[];
+      adaptiveState?: string[];
+      situationalState?: string[];
+      sourceAssistantSeq?: number | null;
+    }>;
+    floors?: Array<{
+      floorId?: string;
+      messageIndex: number;
+      assistantSeq?: number;
+      changes?: Array<{
+        entityId?: string;
+        subjectName: string;
+        layer?: string;
+        op?: string;
+        before?: string[];
+        after?: string[];
+      }>;
+    }>;
+  };
+  people?: {
+    updatedAt?: string;
+    items?: Array<{
+      id?: string;
+      canonicalName: string;
+      aliases?: string[];
+      category?: string;
+      importance?: string;
+      profile?: string;
+    }>;
+  };
+}
+
+export interface QqjQianshiSnapshot {
+  version?: string;
+  ready?: boolean;
+  qqjChatId?: string;
+  anchor?: {
+    rawText?: string;
+    calendarKind?: string;
+  } | null;
+  currentStoryTime?: {
+    displayText?: string;
+  } | null;
+  matters?: Array<{
+    id?: string;
+    title: string;
+    category?: string;
+    status?: string;
+    targetTimeText?: string;
+    location?: string;
+    participantNames?: string[];
+    summary?: string;
+    outcome?: string;
+    sourceFloor?: {
+      floorId?: string;
+      assistantSeq?: number | null;
+      messageIndex?: number | null;
+    };
+  }>;
+  events?: Array<{
+    id?: string;
+    title: string;
+    category?: string;
+    status?: string;
+    storyTime?: {
+      displayText?: string;
+    };
+    location?: string;
+    participantNames?: string[];
+    summary?: string;
+    outcome?: string;
+    sourceFloor?: {
+      floorId?: string;
+      assistantSeq?: number | null;
+      messageIndex?: number | null;
+    };
+  }>;
+  currentProgress?: {
+    renderedText?: string;
+  };
+}
+
+export interface QqjSnapshotData {
+  qqjChatId: string;
+  capturedAt: number;
+  publicSnapshot: QqjPublicSnapshot | null;
+  detailedFloors: QqjMemoryFloorItem[];
+  qianshiSnapshot: QqjQianshiSnapshot | null;
+  backendRecords?: {
+    root?: Record<string, unknown> | null;
+    peopleWorkspace?: Record<string, unknown> | null;
+    timeHead?: Record<string, unknown> | null;
+  } | null;
+}
+
+export interface PreloadedPluginMemoryContext {
+  engram?: EngramSnapshotData | null;
+  qqj?: QqjSnapshotData | null;
+}
+
+export interface QqjPublicBridgeApi {
+  version?: string;
+  getStatus?: () => QqjPublicSnapshot['status'];
+  getSnapshot?: () => QqjPublicSnapshot | null;
+  readMemory?: (options?: Record<string, unknown>) => Promise<{
+    status?: QqjPublicSnapshot['status'];
+    coverage?: QqjPublicSnapshot['memory'] extends { coverage?: infer C } ? C : unknown;
+    floors?: QqjMemoryFloorItem[];
+  } | null>;
+}
+
+export interface QqjQianshiBackendApi {
+  version?: string;
+  getSnapshot?: () => QqjQianshiSnapshot | null;
 }
 
 type ParentWindowWithPlugins = Window & {
   STBaiBaiBook?: BaiBaiBookApi;
   AutoCardUpdaterAPI?: AutoCardUpdaterApi;
   Horae?: HoraeApi;
+  qqj_v3_public_bridge_v1?: QqjPublicBridgeApi;
+  qqj_qianshi_backend_v1?: QqjQianshiBackendApi;
   Mvu?: {
     getMvuData?: (options: { type?: 'message' | 'chat'; message_id?: number | 'latest' }) => {
       stat_data?: Record<string, unknown>;
@@ -175,6 +385,20 @@ export function getMvuApi() {
   return undefined;
 }
 
+export function getQqjPublicBridge(): QqjPublicBridgeApi | undefined {
+  for (const w of getCandidateWindows()) {
+    if (w?.qqj_v3_public_bridge_v1) return w.qqj_v3_public_bridge_v1;
+  }
+  return undefined;
+}
+
+export function getQqjQianshiBackend(): QqjQianshiBackendApi | undefined {
+  for (const w of getCandidateWindows()) {
+    if (w?.qqj_qianshi_backend_v1) return w.qqj_qianshi_backend_v1;
+  }
+  return undefined;
+}
+
 function getNativeChatArray(): Array<Record<string, unknown>> | undefined {
   try {
     const ctxChat = (
@@ -203,6 +427,73 @@ const ACU_FLOOR_KEYS = [
   'table_summary',
   'database_summary',
 ] as const;
+
+const QQJ_FLOOR_KEYS = [
+  'qianqianjie_floor',
+  'qqj_v3_recall_receipt',
+  'qianqianjieAutoHide',
+  'qianqianjie_memory_excluded',
+] as const;
+
+export function hasQqjDataInChat(): boolean {
+  if (getQqjPublicBridge() || getQqjQianshiBackend()) return true;
+  try {
+    const meta = (SillyTavern?.chatMetadata ??
+      (SillyTavern as unknown as { getContext?: () => { chatMetadata?: Record<string, unknown> } })?.getContext?.()
+        ?.chatMetadata) as Record<string, unknown> | undefined;
+    if (meta?.qianqianjie && typeof meta.qianqianjie === 'object') return true;
+    const chat = getNativeChatArray();
+    if (Array.isArray(chat)) {
+      if (
+        chat.some(m => {
+          const extra = m?.extra as Record<string, unknown> | undefined;
+          return Boolean(extra?.qianqianjie_floor || extra?.qqj_v3_recall_receipt);
+        })
+      ) {
+        return true;
+      }
+    }
+    const parentDoc = window.parent?.document ?? document;
+    if (parentDoc?.getElementById('qianqianjie_settings') || parentDoc?.querySelector('[data-qqj-v3-root]')) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+export function hasEngramDataInChat(): boolean {
+  try {
+    const parentDoc = window.parent?.document ?? document;
+    if (
+      parentDoc?.getElementById('engram-QuickPanel-btn') ||
+      parentDoc?.getElementById('engram-top-bar-btn') ||
+      parentDoc?.getElementById('engram-global-overlay') ||
+      parentDoc?.getElementById('engram-floating-btn')
+    ) {
+      return true;
+    }
+    const ctx = (
+      SillyTavern as unknown as {
+        getContext?: () => { chatMetadata?: Record<string, unknown>; extensionSettings?: Record<string, unknown> };
+      }
+    )?.getContext?.();
+    const meta = (SillyTavern?.chatMetadata ?? ctx?.chatMetadata) as Record<string, unknown> | undefined;
+    const extensions = meta?.extensions as Record<string, unknown> | undefined;
+    if (extensions?.engram && typeof extensions.engram === 'object') {
+      return true;
+    }
+    const extSettings = (ctx?.extensionSettings ??
+      (SillyTavern as unknown as Record<string, unknown>)?.extension_settings) as Record<string, unknown> | undefined;
+    if (extSettings?.engram && typeof extSettings.engram === 'object') {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
 
 export function hasDatabaseDataInChat(): boolean {
   if (getDatabaseApi()) return true;
@@ -282,6 +573,8 @@ export function detectInstalledMemoryPlugins(): DetectedPluginInfo[] {
     { id: 'baibai', name: '柏宝书', available: Boolean(getBaiBaiApi()?.getFloor || getBaiBaiApi()?.getSnapshot) },
     { id: 'database', name: '数据库', available: hasDatabaseDataInChat() },
     { id: 'horae', name: 'Horae', available: hasHoraeDataInChat() },
+    { id: 'qqj', name: '千千结/千事', available: hasQqjDataInChat() },
+    { id: 'engram', name: 'Engram记忆', available: hasEngramDataInChat() },
     { id: 'st_memory', name: '酒馆总结', available: hasStSummarizeMemoryInChat() },
     { id: 'mvu', name: 'MVU变量', available: hasMvuDataInChat() },
   ];
@@ -474,6 +767,581 @@ export function captureHoraeSnapshot(floor: number): Record<string, unknown> | n
   }
 }
 
+function resolveCurrentRawChatId(): string {
+  try {
+    const ctx = (
+      SillyTavern as unknown as { getContext?: () => { chatId?: string } }
+    )?.getContext?.();
+    const raw = ctx?.chatId ?? (SillyTavern as unknown as { chatId?: string })?.chatId ?? '';
+    return typeof raw === 'string' ? raw.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function getTargetIndexedDB(): IDBFactory | null {
+  try {
+    const pw = getParentWin();
+    if (pw?.indexedDB) return pw.indexedDB;
+  } catch {
+    // ignore
+  }
+  return typeof indexedDB !== 'undefined' ? indexedDB : null;
+}
+
+async function openExistingIndexedDb(dbName: string): Promise<IDBDatabase | null> {
+  const idb = getTargetIndexedDB();
+  if (!idb) return null;
+
+  try {
+    const idbWithList = idb as IDBFactory & { databases?: () => Promise<Array<{ name?: string }>> };
+    if (typeof idbWithList.databases === 'function') {
+      const list = await idbWithList.databases();
+      if (Array.isArray(list) && !list.some(item => item?.name === dbName)) {
+        return null;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return await new Promise<IDBDatabase | null>(resolve => {
+    let createdNew = false;
+    try {
+      const req = idb.open(dbName);
+      req.onupgradeneeded = e => {
+        if ((e as IDBVersionChangeEvent).oldVersion === 0) {
+          createdNew = true;
+          try {
+            req.transaction?.abort();
+          } catch {
+            // ignore
+          }
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        if (createdNew) {
+          try {
+            db.close();
+            idb.deleteDatabase(dbName);
+          } catch {
+            // ignore
+          }
+          resolve(null);
+          return;
+        }
+        resolve(db);
+      };
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function readAllStoreItems<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
+  if (!db.objectStoreNames.contains(storeName)) return [];
+  return await new Promise<T[]>(resolve => {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(Array.isArray(req.result) ? (req.result as T[]) : []);
+      req.onerror = () => resolve([]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function readKeyValueStore(db: IDBDatabase, storeName: string): Promise<Record<string, unknown>> {
+  if (!db.objectStoreNames.contains(storeName)) return {};
+  return await new Promise<Record<string, unknown>>(resolve => {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+      tx.oncomplete = () => {
+        const out: Record<string, unknown> = {};
+        const keys = Array.isArray(keysReq.result) ? keysReq.result : [];
+        const vals = Array.isArray(valsReq.result) ? valsReq.result : [];
+        for (let i = 0; i < keys.length; i++) {
+          out[String(keys[i])] = vals[i];
+        }
+        resolve(out);
+      };
+      tx.onerror = () => resolve({});
+    } catch {
+      resolve({});
+    }
+  });
+}
+
+export async function readCurrentEngramData(): Promise<EngramSnapshotData | null> {
+  const chatId = resolveCurrentRawChatId();
+  if (!chatId) return null;
+  const db = await openExistingIndexedDb(`Engram_${chatId}`);
+  if (!db) return null;
+
+  try {
+    const [rawEvents, rawEntities, rawMeta] = await Promise.all([
+      readAllStoreItems<EngramEventNode>(db, 'events'),
+      readAllStoreItems<EngramEntityNode>(db, 'entities'),
+      readKeyValueStore(db, 'meta'),
+    ]);
+    db.close();
+
+    if (rawEvents.length === 0 && rawEntities.length === 0 && Object.keys(rawMeta).length === 0) {
+      return null;
+    }
+
+    const strippedEvents: EngramEventNode[] = rawEvents.map(ev => {
+      const copy = safeClone(ev);
+      delete copy.embedding;
+      return copy;
+    });
+    const strippedEntities: EngramEntityNode[] = rawEntities.map(en => {
+      const copy = safeClone(en);
+      delete copy.embedding;
+      return copy;
+    });
+
+    let extensionMeta: Record<string, unknown> | null = null;
+    try {
+      const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
+      const extensions = meta?.extensions as Record<string, unknown> | undefined;
+      if (extensions?.engram && typeof extensions.engram === 'object') {
+        extensionMeta = safeClone(extensions.engram as Record<string, unknown>);
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      chatId,
+      capturedAt: Date.now(),
+      events: strippedEvents,
+      entities: strippedEntities,
+      meta: safeClone(rawMeta),
+      extensionMeta,
+    };
+  } catch {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+}
+
+export async function captureEngramSnapshot(): Promise<Record<string, unknown> | null> {
+  const data = await readCurrentEngramData();
+  return data ? (data as unknown as Record<string, unknown>) : null;
+}
+
+export async function restoreEngramSnapshot(slot: SlotItem, anchorFloor: number): Promise<boolean> {
+  const chatId = resolveCurrentRawChatId();
+  if (!chatId) return false;
+  const db = await openExistingIndexedDb(`Engram_${chatId}`);
+  if (!db) return false;
+
+  try {
+    const [existingEvents, existingEntities, existingMeta] = await Promise.all([
+      readAllStoreItems<EngramEventNode>(db, 'events'),
+      readAllStoreItems<EngramEntityNode>(db, 'entities'),
+      readKeyValueStore(db, 'meta'),
+    ]);
+
+    const eventEmbeddingMap = new Map<string, { summary: string; embedding: number[] }>();
+    for (const ev of existingEvents) {
+      if (ev?.id && Array.isArray(ev.embedding) && ev.embedding.length > 0) {
+        eventEmbeddingMap.set(ev.id, { summary: ev.summary ?? '', embedding: ev.embedding });
+      }
+    }
+    const entityEmbeddingMap = new Map<string, { desc: string; embedding: number[] }>();
+    for (const en of existingEntities) {
+      if (en?.id && Array.isArray(en.embedding) && en.embedding.length > 0) {
+        entityEmbeddingMap.set(en.id, { desc: en.description ?? '', embedding: en.embedding });
+      }
+    }
+
+    const snap = slot.engram_snapshot as unknown as EngramSnapshotData | null;
+
+    if (snap && (Array.isArray(snap.events) || Array.isArray(snap.entities))) {
+      const nextEvents: EngramEventNode[] = (snap.events ?? []).map(ev => {
+        const clone = safeClone(ev);
+        const cached = eventEmbeddingMap.get(clone.id);
+        if (cached && cached.summary === (clone.summary ?? '')) {
+          clone.embedding = cached.embedding;
+          clone.is_embedded = true;
+        } else {
+          delete clone.embedding;
+          clone.is_embedded = false;
+        }
+        return clone;
+      });
+
+      const nextEntities: EngramEntityNode[] = (snap.entities ?? []).map(en => {
+        const clone = safeClone(en);
+        const cached = entityEmbeddingMap.get(clone.id);
+        if (cached && cached.desc === (clone.description ?? '')) {
+          clone.embedding = cached.embedding;
+          clone.is_embedded = true;
+        } else {
+          delete clone.embedding;
+          clone.is_embedded = false;
+        }
+        return clone;
+      });
+
+      const nextMeta: Record<string, unknown> = {
+        ...safeClone(snap.meta ?? {}),
+        lastModified: Date.now(),
+      };
+
+      const storeNames = ['events', 'entities', 'meta'].filter(n => db.objectStoreNames.contains(n));
+      if (storeNames.length > 0) {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(storeNames, 'readwrite');
+          if (db.objectStoreNames.contains('events')) {
+            const evStore = tx.objectStore('events');
+            evStore.clear();
+            for (const ev of nextEvents) {
+              evStore.put(ev);
+            }
+          }
+          if (db.objectStoreNames.contains('entities')) {
+            const enStore = tx.objectStore('entities');
+            enStore.clear();
+            for (const en of nextEntities) {
+              enStore.put(en);
+            }
+          }
+          if (db.objectStoreNames.contains('meta')) {
+            const metaStore = tx.objectStore('meta');
+            metaStore.clear();
+            for (const [k, v] of Object.entries(nextMeta)) {
+              metaStore.put(v, k);
+            }
+          }
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+
+      if (snap.extensionMeta) {
+        try {
+          const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
+          if (meta && typeof meta === 'object') {
+            const extensions = ((meta.extensions as Record<string, unknown> | undefined) ?? {});
+            extensions.engram = safeClone(snap.extensionMeta);
+            meta.extensions = extensions;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      db.close();
+      return true;
+    }
+
+    // 兼容未包含 engram_snapshot 的旧存档：自动裁剪超过 anchorFloor 的 EventNode 与 scope_state
+    const eventsToDelete = existingEvents.filter(
+      ev => typeof ev?.source_range?.start_index === 'number' && ev.source_range.start_index > anchorFloor,
+    );
+    if (eventsToDelete.length > 0 || existingMeta.scope_state) {
+      const storeNames = ['events', 'meta'].filter(n => db.objectStoreNames.contains(n));
+      if (storeNames.length > 0) {
+        await new Promise<void>(resolve => {
+          const tx = db.transaction(storeNames, 'readwrite');
+          if (db.objectStoreNames.contains('events')) {
+            const evStore = tx.objectStore('events');
+            for (const ev of eventsToDelete) {
+              evStore.delete(ev.id);
+            }
+          }
+          if (db.objectStoreNames.contains('meta')) {
+            const metaStore = tx.objectStore('meta');
+            const scopeState = safeClone(
+              (existingMeta.scope_state as Record<string, unknown> | undefined) ?? {},
+            );
+            if (
+              typeof scopeState.last_summarized_floor === 'number' &&
+              scopeState.last_summarized_floor > anchorFloor
+            ) {
+              scopeState.last_summarized_floor = anchorFloor;
+            }
+            if (
+              typeof scopeState.last_extracted_floor === 'number' &&
+              scopeState.last_extracted_floor > anchorFloor
+            ) {
+              scopeState.last_extracted_floor = anchorFloor;
+            }
+            metaStore.put(scopeState, 'scope_state');
+            metaStore.put(Date.now(), 'lastModified');
+          }
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        });
+      }
+      db.close();
+      return true;
+    }
+
+    db.close();
+    return false;
+  } catch {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
+function resolveQqjChatId(publicSnap?: QqjPublicSnapshot | null, qianshiSnap?: QqjQianshiSnapshot | null): string {
+  const fromPublic = publicSnap?.status?.identity?.qqjChatId;
+  if (typeof fromPublic === 'string' && fromPublic.trim()) return fromPublic.trim();
+  const fromQianshi = qianshiSnap?.qqjChatId;
+  if (typeof fromQianshi === 'string' && fromQianshi.trim()) return fromQianshi.trim();
+  try {
+    const bridgeStatus = getQqjPublicBridge()?.getStatus?.();
+    const idFromStatus = bridgeStatus?.identity?.qqjChatId;
+    if (typeof idFromStatus === 'string' && idFromStatus.trim()) return idFromStatus.trim();
+  } catch {
+    // ignore
+  }
+  try {
+    const meta = (SillyTavern?.chatMetadata ??
+      (SillyTavern as unknown as { getContext?: () => { chatMetadata?: Record<string, unknown> } })?.getContext?.()
+        ?.chatMetadata) as Record<string, unknown> | undefined;
+    const qqjMeta = meta?.qianqianjie as Record<string, unknown> | undefined;
+    if (typeof qqjMeta?.chatId === 'string' && qqjMeta.chatId.trim()) {
+      return qqjMeta.chatId.trim();
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+function getStBackendHeaders(): Record<string, string> {
+  try {
+    const ctx = (
+      SillyTavern as unknown as { getContext?: () => { getRequestHeaders?: () => Record<string, string> } }
+    )?.getContext?.();
+    const h = ctx?.getRequestHeaders?.();
+    if (h && typeof h === 'object') {
+      return {
+        ...h,
+        'Content-Type': 'application/json',
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    'Content-Type': 'application/json',
+  };
+}
+
+async function fetchQqjBackendRecord(
+  qqjChatId: string,
+  recordId: string,
+): Promise<{ revision?: number; data?: Record<string, unknown> } | null> {
+  if (!qqjChatId || !recordId) return null;
+  try {
+    const url = `/api/plugins/st-bainiaodata/v1/collections/qianqianjie/${encodeURIComponent(`chat-${qqjChatId}`)}/records/${encodeURIComponent(recordId)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: getStBackendHeaders(),
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const rec = (json?.record ?? json) as { revision?: number; data?: Record<string, unknown> } | undefined;
+    if (rec && rec.data && typeof rec.data === 'object') {
+      return {
+        revision: typeof rec.revision === 'number' ? rec.revision : undefined,
+        data: safeClone(rec.data),
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function putQqjBackendRecord(
+  qqjChatId: string,
+  recordId: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  if (!qqjChatId || !recordId || !data) return false;
+  const url = `/api/plugins/st-bainiaodata/v1/collections/qianqianjie/${encodeURIComponent(`chat-${qqjChatId}`)}/records/${encodeURIComponent(recordId)}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const current = await fetchQqjBackendRecord(qqjChatId, recordId);
+      const body: Record<string, unknown> = { data };
+      if (typeof current?.revision === 'number') {
+        body.expectedRevision = current.revision;
+      }
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: getStBackendHeaders(),
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return true;
+      if (res.status !== 409) return false;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function clearQqjLocalCoreCache(): Promise<void> {
+  const db = await openExistingIndexedDb('qqj-v3-core-cache');
+  if (!db) return;
+  try {
+    if (db.objectStoreNames.contains('core_records')) {
+      await new Promise<void>(resolve => {
+        const tx = db.transaction('core_records', 'readwrite');
+        tx.objectStore('core_records').clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+  } catch {
+    // ignore
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export async function readCurrentQqjData(includeBackendRecords = false): Promise<QqjSnapshotData | null> {
+  const bridge = getQqjPublicBridge();
+  const qianshi = getQqjQianshiBackend();
+  if (!bridge && !qianshi && !hasQqjDataInChat()) return null;
+
+  let publicSnapshot: QqjPublicSnapshot | null = null;
+  let detailedFloors: QqjMemoryFloorItem[] = [];
+  let qianshiSnapshot: QqjQianshiSnapshot | null = null;
+
+  try {
+    publicSnapshot = bridge?.getSnapshot?.() ?? null;
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (typeof bridge?.readMemory === 'function') {
+      const memResult = await bridge.readMemory();
+      if (Array.isArray(memResult?.floors)) {
+        detailedFloors = safeClone(memResult.floors);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  if (detailedFloors.length === 0 && Array.isArray(publicSnapshot?.memory?.floors)) {
+    detailedFloors = safeClone(publicSnapshot.memory.floors);
+  }
+
+  try {
+    qianshiSnapshot = qianshi?.getSnapshot?.() ?? null;
+  } catch {
+    // ignore
+  }
+
+  const qqjChatId = resolveQqjChatId(publicSnapshot, qianshiSnapshot);
+  let backendRecords: QqjSnapshotData['backendRecords'] = null;
+
+  if (includeBackendRecords && qqjChatId) {
+    try {
+      const [rootRec, peopleRec, timeHeadRec] = await Promise.all([
+        fetchQqjBackendRecord(qqjChatId, 'v3-root'),
+        fetchQqjBackendRecord(qqjChatId, 'v3-people-workspace'),
+        fetchQqjBackendRecord(qqjChatId, 'v3-time-head'),
+      ]);
+      if (rootRec?.data || peopleRec?.data || timeHeadRec?.data) {
+        backendRecords = {
+          root: rootRec?.data ?? null,
+          peopleWorkspace: peopleRec?.data ?? null,
+          timeHead: timeHeadRec?.data ?? null,
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!publicSnapshot && detailedFloors.length === 0 && !qianshiSnapshot && !backendRecords) {
+    return null;
+  }
+
+  return {
+    qqjChatId,
+    capturedAt: Date.now(),
+    publicSnapshot: safeClone(publicSnapshot),
+    detailedFloors,
+    qianshiSnapshot: safeClone(qianshiSnapshot),
+    backendRecords,
+  };
+}
+
+export async function captureQqjSnapshot(): Promise<Record<string, unknown> | null> {
+  const data = await readCurrentQqjData(true);
+  return data ? (data as unknown as Record<string, unknown>) : null;
+}
+
+export async function restoreQqjSnapshot(slot: SlotItem): Promise<boolean> {
+  const snap = slot.qqj_snapshot as unknown as QqjSnapshotData | null;
+  if (!snap) return false;
+
+  const qqjChatId = snap.qqjChatId || resolveQqjChatId(snap.publicSnapshot, snap.qianshiSnapshot);
+  if (!qqjChatId || !snap.backendRecords) return false;
+
+  const tasks: Promise<boolean>[] = [];
+  if (snap.backendRecords.root) {
+    tasks.push(putQqjBackendRecord(qqjChatId, 'v3-root', snap.backendRecords.root));
+  }
+  if (snap.backendRecords.peopleWorkspace) {
+    tasks.push(putQqjBackendRecord(qqjChatId, 'v3-people-workspace', snap.backendRecords.peopleWorkspace));
+  }
+  if (snap.backendRecords.timeHead) {
+    tasks.push(putQqjBackendRecord(qqjChatId, 'v3-time-head', snap.backendRecords.timeHead));
+  }
+
+  if (tasks.length === 0) return false;
+  const results = await Promise.all(tasks);
+  await clearQqjLocalCoreCache();
+  return results.some(Boolean);
+}
+
+export async function preloadExternalPluginMemoriesForSummary(): Promise<PreloadedPluginMemoryContext> {
+  const [engram, qqj] = await Promise.all([
+    readCurrentEngramData().catch(() => null),
+    readCurrentQqjData(false).catch(() => null),
+  ]);
+  return {
+    engram,
+    qqj,
+  };
+}
+
 export function captureChatMessagesSnapshot(anchorFloor: number): ChatMessageSnapshotItem[] | null {
   try {
     const helperMsgs = getChatMessages(`0-${anchorFloor}`, { hide_state: 'all', include_swipes: false });
@@ -496,13 +1364,21 @@ export function captureChatMessagesSnapshot(anchorFloor: number): ChatMessageSna
         }
       }
 
+      const msgWithSwipe = msg as ChatMessage & { swipe_id?: number };
+      const resolvedSwipeId =
+        typeof msgWithSwipe.swipe_id === 'number'
+          ? msgWithSwipe.swipe_id
+          : typeof rawMes.swipe_id === 'number'
+            ? rawMes.swipe_id
+            : undefined;
+
       return {
         message_id: fid,
         name: msg.name,
         role: msg.role,
         is_hidden: Boolean(msg.is_hidden),
         message: msg.message,
-        swipe_id: msg.swipe_id,
+        swipe_id: resolvedSwipeId,
         data: safeClone({ ...rawData, ...(msg.data ?? {}) }),
         extra: safeClone({ ...rawExtra, ...(msg.extra ?? {}) }),
         horae_meta: horaeMeta ? safeClone(horaeMeta) : null,
@@ -575,6 +1451,43 @@ async function syncFloorVisibilityAndCleanPluginMeta(
         rawExtra.memory = safeClone(rawExtra._timeloop_backup_st_memory);
       }
 
+      if (rawExtra.type === 'timeloop_abandoned') {
+        const backupType = rawExtra._timeloop_backup_extra_type;
+        if (typeof backupType === 'string' && backupType) {
+          rawExtra.type = backupType;
+        } else {
+          delete rawExtra.type;
+        }
+        delete rawExtra._timeloop_backup_extra_type;
+      }
+
+      const qqjBackup = rawExtra._timeloop_backup_qqj as Record<string, unknown> | undefined;
+      if (qqjBackup && typeof qqjBackup === 'object') {
+        for (const key of QQJ_FLOOR_KEYS) {
+          if (qqjBackup[key] !== undefined && rawExtra[key] === undefined) {
+            rawExtra[key] = safeClone(qqjBackup[key]);
+          }
+        }
+        if (Array.isArray(rawMes.swipe_info) && Array.isArray(qqjBackup._swipe_qqj)) {
+          const swipeArr = rawMes.swipe_info as Array<Record<string, unknown>>;
+          const savedSwipeQqj = qqjBackup._swipe_qqj as Array<Record<string, unknown> | null>;
+          for (let s = 0; s < swipeArr.length; s++) {
+            const sEntry = swipeArr[s];
+            const sBackup = savedSwipeQqj[s];
+            if (sEntry && typeof sEntry === 'object' && sBackup && typeof sBackup === 'object') {
+              const sExtra = ((sEntry.extra as Record<string, unknown> | undefined) ?? {});
+              for (const key of QQJ_FLOOR_KEYS) {
+                if (sBackup[key] !== undefined && sExtra[key] === undefined) {
+                  sExtra[key] = safeClone(sBackup[key]);
+                }
+              }
+              sEntry.extra = sExtra;
+            }
+          }
+        }
+        delete rawExtra._timeloop_backup_qqj;
+      }
+
       rawMes.extra = rawExtra;
       rawMes.data = rawData;
     }
@@ -600,6 +1513,49 @@ async function syncFloorVisibilityAndCleanPluginMeta(
       rawExtra.timeloop_abandoned = true;
       rawData.bbs_omit = true;
       rawData.timeloop_abandoned = true;
+
+      // 让千千结/千事 (QQJ) 将被回溯隐藏的楼层识别为非剧情系统楼层并跳过（避免触发 needsReview 冲突）
+      if (rawExtra.type !== 'timeloop_abandoned') {
+        rawExtra._timeloop_backup_extra_type = rawExtra.type ?? null;
+        rawExtra.type = 'timeloop_abandoned';
+      }
+
+      const qqjBackup: Record<string, unknown> =
+        (rawExtra._timeloop_backup_qqj as Record<string, unknown> | undefined) ?? {};
+      for (const key of QQJ_FLOOR_KEYS) {
+        if (rawExtra[key] !== undefined) {
+          if (qqjBackup[key] === undefined) qqjBackup[key] = safeClone(rawExtra[key]);
+          delete rawExtra[key];
+        }
+      }
+      if (Array.isArray(rawMes.swipe_info)) {
+        const swipeArr = rawMes.swipe_info as Array<Record<string, unknown>>;
+        const swipeBackups: Array<Record<string, unknown> | null> = Array.isArray(qqjBackup._swipe_qqj)
+          ? (qqjBackup._swipe_qqj as Array<Record<string, unknown> | null>)
+          : [];
+        let hasSwipeQqj = false;
+        for (let s = 0; s < swipeArr.length; s++) {
+          const sExtra = swipeArr[s]?.extra as Record<string, unknown> | undefined;
+          if (!sExtra || typeof sExtra !== 'object') continue;
+          const sBackup: Record<string, unknown> = swipeBackups[s] ?? {};
+          for (const key of QQJ_FLOOR_KEYS) {
+            if (sExtra[key] !== undefined) {
+              if (sBackup[key] === undefined) sBackup[key] = safeClone(sExtra[key]);
+              delete sExtra[key];
+              hasSwipeQqj = true;
+            }
+          }
+          if (Object.keys(sBackup).length > 0) {
+            swipeBackups[s] = sBackup;
+          }
+        }
+        if (hasSwipeQqj || swipeBackups.length > 0) {
+          qqjBackup._swipe_qqj = swipeBackups;
+        }
+      }
+      if (Object.keys(qqjBackup).length > 0) {
+        rawExtra._timeloop_backup_qqj = qqjBackup;
+      }
 
       const currentHorae = rawMes.horae_meta ?? rawExtra.horae_meta;
       if (currentHorae && !rawExtra._timeloop_backup_horae_meta) {
@@ -797,6 +1753,42 @@ async function restoreSlotExternalPlugins(slot: SlotItem): Promise<string[]> {
     restoredPlugins.push('柏宝书');
   }
 
+  // (f) 恢复 千千结 / 千事 (QQJ / Qianshi) 后端头指针与楼层绑定
+  if (slot.qqj_snapshot || hasQqjDataInChat()) {
+    try {
+      const qqjRestored = await restoreQqjSnapshot(slot);
+      if (qqjRestored || hasQqjDataInChat()) {
+        restoredPlugins.push('千千结/千事');
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // (g) 恢复 Engram IndexedDB 记忆与实体状态
+  if (slot.engram_snapshot || hasEngramDataInChat()) {
+    try {
+      const engramRestored = await restoreEngramSnapshot(slot, anchorFloor);
+      if (engramRestored) {
+        restoredPlugins.push('Engram记忆');
+        try {
+          const evSource = (
+            SillyTavern as unknown as { eventSource?: { emit?: (evt: string, ...args: unknown[]) => void } }
+          )?.eventSource;
+          const evTypes = (SillyTavern as unknown as { event_types?: Record<string, string> })?.event_types;
+          const rawChatId = resolveCurrentRawChatId();
+          if (evSource?.emit && evTypes?.CHAT_CHANGED && rawChatId) {
+            evSource.emit(evTypes.CHAT_CHANGED, rawChatId);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const ctx = (
       SillyTavern as unknown as { getContext?: () => { saveChat?: () => Promise<void> | void } }
@@ -879,6 +1871,24 @@ export async function hideRewoundFloorsAndRestoreAnchor(
       delete nextExtra.bbs_omit;
       delete nextExtra.timeloop_abandoned;
     }
+    if (nextExtra.type === 'timeloop_abandoned') {
+      const backupType = nextExtra._timeloop_backup_extra_type;
+      if (typeof backupType === 'string' && backupType) {
+        nextExtra.type = backupType;
+      } else {
+        delete nextExtra.type;
+      }
+      delete nextExtra._timeloop_backup_extra_type;
+    }
+    const qqjBackup = nextExtra._timeloop_backup_qqj as Record<string, unknown> | undefined;
+    if (qqjBackup && typeof qqjBackup === 'object') {
+      for (const key of QQJ_FLOOR_KEYS) {
+        if (qqjBackup[key] !== undefined && nextExtra[key] === undefined) {
+          nextExtra[key] = safeClone(qqjBackup[key]);
+        }
+      }
+      delete nextExtra._timeloop_backup_qqj;
+    }
     const savedHorae =
       snap?.horae_meta ??
       (horaeFloorsMap[String(fid)] as Record<string, unknown> | undefined);
@@ -907,7 +1917,7 @@ export async function hideRewoundFloorsAndRestoreAnchor(
   for (const m of allAfterAnchor) {
     const fid = m.message_id;
     const rawMes = nativeChat?.[fid];
-    const nextData = safeClone({
+    const nextData = safeClone<Record<string, unknown>>({
       ...(m.data ?? {}),
       ...((rawMes?.data as Record<string, unknown> | undefined) ?? {}),
       timeloop_abandoned: true,
@@ -919,17 +1929,21 @@ export async function hideRewoundFloorsAndRestoreAnchor(
       delete nextData.stat_data;
     }
 
-    const nextExtra = safeClone({
+    const nextExtra = safeClone<Record<string, unknown>>({
       ...(m.extra ?? {}),
       ...((rawMes?.extra as Record<string, unknown> | undefined) ?? {}),
       timeloop_abandoned: true,
       bbs_omit: true,
+      type: 'timeloop_abandoned',
     });
     delete nextExtra.horae_meta;
     delete nextExtra.memory;
     for (const key of ACU_FLOOR_KEYS) {
       delete nextExtra[key];
       delete nextData[key];
+    }
+    for (const key of QQJ_FLOOR_KEYS) {
+      delete nextExtra[key];
     }
 
     updatesToApply.push({
@@ -1641,6 +2655,358 @@ export function buildMvuSnapshotDiff(anchorSlot: SlotItem, currentFloor: number)
       }
     }
     return diffs.length > 0 ? `【MVU·区间变量变化】：\n${diffs.join('\n')}` : '';
+  } catch {
+    return '';
+  }
+}
+
+export function extractEngramFloorMeta(
+  floorId: number,
+  preloaded?: PreloadedPluginMemoryContext | null,
+): string | null {
+  try {
+    const events = preloaded?.engram?.events;
+    if (!Array.isArray(events) || events.length === 0) return null;
+
+    const matched = events.filter(ev => {
+      if (!ev || ev.is_archived) return false;
+      const start = ev.source_range?.start_index;
+      const end = ev.source_range?.end_index;
+      if (typeof end === 'number' && end === floorId) return true;
+      if (typeof start === 'number' && typeof end !== 'number' && start === floorId) return true;
+      return false;
+    });
+
+    if (matched.length === 0) return null;
+
+    const lines: string[] = [];
+    for (const ev of matched) {
+      const kv = ev.structured_kv;
+      const rangeStr =
+        typeof ev.source_range?.start_index === 'number' && typeof ev.source_range?.end_index === 'number'
+          ? `[#${ev.source_range.start_index}~#${ev.source_range.end_index}]`
+          : '';
+      const parts: string[] = [];
+      if (kv?.time_anchor) parts.push(`时间:${kv.time_anchor}`);
+      if (kv?.location) {
+        const loc = Array.isArray(kv.location) ? kv.location.join('/') : kv.location;
+        if (loc) parts.push(`地点:${loc}`);
+      }
+      if (Array.isArray(kv?.role) && kv.role.length > 0) {
+        parts.push(`人物:${kv.role.join('、')}`);
+      }
+      if (kv?.event) parts.push(`事件:${kv.event}`);
+      if (Array.isArray(kv?.logic) && kv.logic.length > 0) {
+        parts.push(`逻辑:${kv.logic.join(';')}`);
+      }
+      if (kv?.causality) parts.push(`因果:${kv.causality}`);
+      const summaryText = (ev.summary || '').trim();
+      if (summaryText && !parts.some(p => summaryText.includes(p))) {
+        parts.push(`摘要:${summaryText}`);
+      }
+      if (parts.length > 0) {
+        lines.push(`${rangeStr}${parts.join(' | ')}`);
+      }
+    }
+
+    return lines.length > 0 ? `Engram记忆节点 -> ${lines.join(' ； ')}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export function extractQqjFloorMeta(
+  floorId: number,
+  preloaded?: PreloadedPluginMemoryContext | null,
+): string | null {
+  try {
+    const qqjData = preloaded?.qqj;
+    const publicSnap = qqjData?.publicSnapshot ?? getQqjPublicBridge()?.getSnapshot?.() ?? null;
+    const qianshiSnap = qqjData?.qianshiSnapshot ?? getQqjQianshiBackend()?.getSnapshot?.() ?? null;
+    const detailedFloors =
+      qqjData?.detailedFloors && qqjData.detailedFloors.length > 0
+        ? qqjData.detailedFloors
+        : (publicSnap?.memory?.floors ?? []);
+
+    const parts: string[] = [];
+
+    const memFloor = detailedFloors.find(f => f?.messageIndex === floorId);
+    if (memFloor) {
+      if (memFloor.chronologyAnchor?.explicitRef) {
+        parts.push(`时间锚点:${memFloor.chronologyAnchor.explicitRef}`);
+      }
+      if (memFloor.summary && memFloor.summary.trim()) {
+        parts.push(`本层总结:${memFloor.summary.trim()}`);
+      }
+      if (Array.isArray(memFloor.events) && memFloor.events.length > 0) {
+        const evStrs = memFloor.events
+          .map(e => [e.title, e.summary].filter(Boolean).join(':'))
+          .filter(Boolean);
+        if (evStrs.length > 0) parts.push(`关键事件:${evStrs.join('；')}`);
+      }
+      if (Array.isArray(memFloor.actions) && memFloor.actions.length > 0) {
+        const actStrs = memFloor.actions
+          .map(a => `${a.actor || ''}${a.action || ''}${a.target ? `→${a.target}` : ''}${a.outcome ? `(${a.outcome})` : ''}`)
+          .filter(Boolean);
+        if (actStrs.length > 0) parts.push(`行动结果:${actStrs.join('；')}`);
+      }
+      if (Array.isArray(memFloor.commitments) && memFloor.commitments.length > 0) {
+        const comStrs = memFloor.commitments
+          .map(c => `${c.actor || ''}承诺${c.target ? `对${c.target}` : ''}:${c.content || ''}${c.status ? `[${c.status}]` : ''}`)
+          .filter(Boolean);
+        if (comStrs.length > 0) parts.push(`约定承诺:${comStrs.join('；')}`);
+      }
+      if (Array.isArray(memFloor.openLoops) && memFloor.openLoops.length > 0) {
+        parts.push(`未决伏笔:${memFloor.openLoops.filter(Boolean).join('；')}`);
+      }
+      if (Array.isArray(memFloor.relationshipShift) && memFloor.relationshipShift.length > 0) {
+        const relStrs = memFloor.relationshipShift
+          .map(r => `${Array.isArray(r.pair) ? r.pair.join('↔') : ''}:${r.summary || ''}`)
+          .filter(Boolean);
+        if (relStrs.length > 0) parts.push(`关系变化:${relStrs.join('；')}`);
+      }
+    }
+
+    const cseFloor = publicSnap?.cse?.floors?.find(f => f?.messageIndex === floorId);
+    if (cseFloor && Array.isArray(cseFloor.changes) && cseFloor.changes.length > 0) {
+      const cseStrs = cseFloor.changes
+        .map(ch => {
+          const afterText = Array.isArray(ch.after) ? ch.after.join('、') : '';
+          return afterText ? `${ch.subjectName}(${ch.layer || '状态'}):${afterText}` : '';
+        })
+        .filter(Boolean);
+      if (cseStrs.length > 0) {
+        parts.push(`双丝网状态演进:${cseStrs.join('；')}`);
+      }
+    }
+
+    if (qianshiSnap) {
+      const qsEvents = (qianshiSnap.events ?? []).filter(e => e?.sourceFloor?.messageIndex === floorId);
+      if (qsEvents.length > 0) {
+        const qsEvStrs = qsEvents
+          .map(
+            e =>
+              `${e.storyTime?.displayText ? `[${e.storyTime.displayText}]` : ''}${e.title}${e.summary ? `:${e.summary}` : ''}${e.outcome ? `(结果:${e.outcome})` : ''}`,
+          )
+          .filter(Boolean);
+        if (qsEvStrs.length > 0) parts.push(`千事事件:${qsEvStrs.join('；')}`);
+      }
+      const qsMatters = (qianshiSnap.matters ?? []).filter(m => m?.sourceFloor?.messageIndex === floorId);
+      if (qsMatters.length > 0) {
+        const qsMatStrs = qsMatters
+          .map(
+            m =>
+              `${m.title}${m.status ? `[${m.status}]` : ''}${m.targetTimeText ? `(时限:${m.targetTimeText})` : ''}${m.summary ? `:${m.summary}` : ''}`,
+          )
+          .filter(Boolean);
+        if (qsMatStrs.length > 0) parts.push(`千事待办:${qsMatStrs.join('；')}`);
+      }
+    }
+
+    return parts.length > 0 ? `千千结/千事记录 -> ${parts.join(' | ')}` : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildEngramSnapshotDiff(
+  anchorSlot: SlotItem,
+  anchorFloor: number,
+  currentFloor: number,
+  preloaded?: PreloadedPluginMemoryContext | null,
+): string {
+  try {
+    const currentEngram = preloaded?.engram;
+    if (!currentEngram) return '';
+
+    const beforeEngram = anchorSlot.engram_snapshot as unknown as EngramSnapshotData | null;
+    const lines: string[] = [];
+
+    const rangeEvents = (currentEngram.events ?? []).filter(ev => {
+      if (!ev || ev.is_archived) return false;
+      const start = ev.source_range?.start_index;
+      const end = ev.source_range?.end_index;
+      if (typeof end === 'number' && end > anchorFloor && end <= currentFloor) return true;
+      if (typeof start === 'number' && start > anchorFloor && start <= currentFloor) return true;
+      return false;
+    });
+
+    if (rangeEvents.length > 0) {
+      lines.push('【Engram·本段事件节点归纳】：');
+      for (const ev of rangeEvents) {
+        const kv = ev.structured_kv;
+        const rangeTag =
+          typeof ev.source_range?.start_index === 'number' && typeof ev.source_range?.end_index === 'number'
+            ? `#${ev.source_range.start_index}~#${ev.source_range.end_index}`
+            : '区间节点';
+        const metaParts = [
+          kv?.time_anchor ? `时间:${kv.time_anchor}` : '',
+          kv?.location ? `地点:${Array.isArray(kv.location) ? kv.location.join('/') : kv.location}` : '',
+          kv?.event ? `核心:${kv.event}` : '',
+          kv?.causality ? `因果:${kv.causality}` : '',
+        ].filter(Boolean);
+        lines.push(`- [${rangeTag}] ${metaParts.join(' | ')}${ev.summary ? `\n  ${ev.summary.trim()}` : ''}`);
+      }
+    }
+
+    const beforeEntityMap = new Map<string, EngramEntityNode>();
+    for (const en of beforeEngram?.entities ?? []) {
+      if (en?.id) beforeEntityMap.set(en.id, en);
+    }
+
+    const entityDiffs: string[] = [];
+    for (const en of currentEngram.entities ?? []) {
+      if (!en?.id || en.is_archived) continue;
+      const prev = beforeEntityMap.get(en.id);
+      if (!prev) {
+        entityDiffs.push(
+          `- [新增实体] ${en.name}(${en.type}): ${(en.description || JSON.stringify(en.profile ?? {})).slice(0, 180)}`,
+        );
+      } else if (
+        (prev.description ?? '') !== (en.description ?? '') ||
+        JSON.stringify(prev.profile ?? {}) !== JSON.stringify(en.profile ?? {})
+      ) {
+        entityDiffs.push(
+          `- [状态更新] ${en.name}(${en.type}): ${(en.description || JSON.stringify(en.profile ?? {})).slice(0, 180)}`,
+        );
+      }
+    }
+
+    if (entityDiffs.length > 0) {
+      lines.push(`【Engram·实体图谱与人物/世界状态变化】：\n${entityDiffs.join('\n')}`);
+    }
+
+    return lines.join('\n\n');
+  } catch {
+    return '';
+  }
+}
+
+export function buildQqjSnapshotDiff(
+  anchorSlot: SlotItem,
+  anchorFloor: number,
+  currentFloor: number,
+  preloaded?: PreloadedPluginMemoryContext | null,
+): string {
+  try {
+    const qqjData = preloaded?.qqj;
+    const afterPub = qqjData?.publicSnapshot ?? getQqjPublicBridge()?.getSnapshot?.() ?? null;
+    const afterQs = qqjData?.qianshiSnapshot ?? getQqjQianshiBackend()?.getSnapshot?.() ?? null;
+    if (!afterPub && !afterQs) return '';
+
+    const beforeSnap = anchorSlot.qqj_snapshot as unknown as QqjSnapshotData | null;
+    const beforePub = beforeSnap?.publicSnapshot ?? null;
+    const beforeQs = beforeSnap?.qianshiSnapshot ?? null;
+
+    const sections: string[] = [];
+
+    // 1. 千事 (Qianshi) 故事时间、区间新增事件与事项推进
+    if (afterQs) {
+      const bTime = beforeQs?.currentStoryTime?.displayText || beforeQs?.anchor?.rawText || '';
+      const aTime = afterQs.currentStoryTime?.displayText || afterQs.anchor?.rawText || '';
+      if (aTime) {
+        sections.push(`【千事·故事时间推进】：${bTime ? `${bTime} → ${aTime}` : aTime}`);
+      }
+
+      const rangeQsEvents = (afterQs.events ?? []).filter(ev => {
+        const msgIdx = ev?.sourceFloor?.messageIndex;
+        return typeof msgIdx === 'number' && msgIdx > anchorFloor && msgIdx <= currentFloor;
+      });
+      if (rangeQsEvents.length > 0) {
+        const evLines = rangeQsEvents.map(
+          ev =>
+            `- ${ev.storyTime?.displayText ? `[${ev.storyTime.displayText}] ` : ''}${ev.title}${ev.location ? ` @${ev.location}` : ''}: ${ev.summary || ''}${ev.outcome ? ` (结局:${ev.outcome})` : ''}`,
+        );
+        sections.push(`【千事·本段大事记】：\n${evLines.join('\n')}`);
+      }
+
+      const beforeMatterMap = new Map<string, string>();
+      for (const m of beforeQs?.matters ?? []) {
+        if (m?.title) beforeMatterMap.set(m.id || m.title, `${m.status || ''}|${m.summary || ''}|${m.outcome || ''}`);
+      }
+      const matterLines: string[] = [];
+      for (const m of afterQs.matters ?? []) {
+        if (!m?.title) continue;
+        const key = m.id || m.title;
+        const sig = `${m.status || ''}|${m.summary || ''}|${m.outcome || ''}`;
+        const msgIdx = m.sourceFloor?.messageIndex;
+        const isInRange = typeof msgIdx === 'number' && msgIdx > anchorFloor && msgIdx <= currentFloor;
+        if (isInRange || beforeMatterMap.get(key) !== sig) {
+          matterLines.push(
+            `- ${m.title}${m.status ? `[${m.status}]` : ''}${m.targetTimeText ? `(时限:${m.targetTimeText})` : ''}: ${m.summary || ''}${m.outcome ? ` → ${m.outcome}` : ''}`,
+          );
+        }
+      }
+      if (matterLines.length > 0) {
+        sections.push(`【千事·事项与待办推进】：\n${matterLines.join('\n')}`);
+      }
+    }
+
+    // 2. 千千结 双丝网 (CSE) 角色核心/适应/情境状态变化
+    if (Array.isArray(afterPub?.cse?.currentSubjects) && afterPub.cse.currentSubjects.length > 0) {
+      const beforeSubjMap = new Map<string, string>();
+      for (const s of beforePub?.cse?.currentSubjects ?? []) {
+        if (s?.subjectName) {
+          beforeSubjMap.set(
+            s.subjectName,
+            JSON.stringify([s.coreState ?? [], s.adaptiveState ?? [], s.situationalState ?? []]),
+          );
+        }
+      }
+      const cseLines: string[] = [];
+      for (const s of afterPub.cse.currentSubjects) {
+        if (!s?.subjectName) continue;
+        const curSig = JSON.stringify([s.coreState ?? [], s.adaptiveState ?? [], s.situationalState ?? []]);
+        if (beforeSubjMap.get(s.subjectName) !== curSig) {
+          const states = [
+            Array.isArray(s.coreState) && s.coreState.length > 0 ? `核心[${s.coreState.join('、')}]` : '',
+            Array.isArray(s.adaptiveState) && s.adaptiveState.length > 0 ? `适应[${s.adaptiveState.join('、')}]` : '',
+            Array.isArray(s.situationalState) && s.situationalState.length > 0
+              ? `当前情境[${s.situationalState.join('、')}]`
+              : '',
+          ].filter(Boolean);
+          if (states.length > 0) {
+            cseLines.push(`- ${s.subjectName}: ${states.join(' | ')}`);
+          }
+        }
+      }
+      if (cseLines.length > 0) {
+        sections.push(`【千千结·双丝网角色心理与状态演进】：\n${cseLines.join('\n')}`);
+      }
+    }
+
+    // 3. 千千结 区间未决伏笔与承诺汇总
+    const detailedFloors =
+      qqjData?.detailedFloors && qqjData.detailedFloors.length > 0
+        ? qqjData.detailedFloors
+        : (afterPub?.memory?.floors ?? []);
+    const rangeFloors = detailedFloors.filter(
+      f => typeof f?.messageIndex === 'number' && f.messageIndex > anchorFloor && f.messageIndex <= currentFloor,
+    );
+    if (rangeFloors.length > 0) {
+      const openLoops = new Set<string>();
+      const commitments: string[] = [];
+      for (const f of rangeFloors) {
+        for (const ol of f.openLoops ?? []) {
+          if (ol && ol.trim()) openLoops.add(ol.trim());
+        }
+        for (const c of f.commitments ?? []) {
+          if (c?.content) {
+            commitments.push(
+              `${c.actor || ''}对${c.target || '对方'}承诺:${c.content}${c.status ? `[${c.status}]` : ''}`,
+            );
+          }
+        }
+      }
+      if (commitments.length > 0) {
+        sections.push(`【千千结·区间关键约定与承诺】：\n- ${commitments.join('\n- ')}`);
+      }
+      if (openLoops.size > 0) {
+        sections.push(`【千千结·区间暴露的伏笔与未决危机】：\n- ${Array.from(openLoops).join('\n- ')}`);
+      }
+    }
+
+    return sections.join('\n\n');
   } catch {
     return '';
   }

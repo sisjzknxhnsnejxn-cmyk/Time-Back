@@ -36,6 +36,8 @@
             <span v-if="slots[key]?.database_snapshot" class="tl-meta-tag">含数据库快照</span>
             <span v-if="slots[key]?.baibai_snapshot" class="tl-meta-tag">含柏宝书快照</span>
             <span v-if="slots[key]?.horae_snapshot" class="tl-meta-tag">含Horae快照</span>
+            <span v-if="slots[key]?.qqj_snapshot" class="tl-meta-tag">含千千结/千事快照</span>
+            <span v-if="slots[key]?.engram_snapshot" class="tl-meta-tag">含Engram快照</span>
             <span v-if="slots[key]?.mvu_snapshot || slots[key]?.mvu_chat_snapshot" class="tl-meta-tag">含MVU快照</span>
           </div>
         </div>

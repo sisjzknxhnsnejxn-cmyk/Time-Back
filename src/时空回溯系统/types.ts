@@ -146,6 +146,8 @@ export const SlotItemSchema = z.object({
   chat_metadata_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
   baibai_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
   horae_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  engram_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
+  qqj_snapshot: z.record(z.string(), z.unknown()).nullable().default(null),
   chat_messages_snapshot: z.array(ChatMessageSnapshotItemSchema).nullable().default(null),
 });
 
