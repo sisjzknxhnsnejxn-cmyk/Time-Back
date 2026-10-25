@@ -1,6 +1,6 @@
 export const ThemeColorSchema = z.enum(['amber', 'cyan', 'rose', 'emerald']).default('amber');
 export const ColorModeSchema = z.enum(['dark', 'light']).default('dark');
-export const FloatingBallModeSchema = z.enum(['always', 'minimized_only', 'off']).default('always');
+export const FloatingBallModeSchema = z.enum(['always', 'minimized_only', 'off']).default('minimized_only');
 export const FloatingBallSideSchema = z.enum(['left', 'right']).default('right');
 
 /**
@@ -114,6 +114,7 @@ export const ApiSettingsSchema = z
     floating_ball_top_percent: z.number().min(5).max(92).default(72),
     floating_ball_x_percent: z.number().min(2).max(92).default(78),
     floating_ball_y_percent: z.number().min(4).max(92).default(76),
+    floating_ball_mode_v3: z.boolean().default(false),
   })
   .prefault({});
 

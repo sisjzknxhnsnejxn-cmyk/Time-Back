@@ -1,6 +1,7 @@
 <template>
   <div
     class="timeloop-theme-scope"
+    :class="{ 'is-modal-open': store.isModalOpen && !store.isMinimized }"
     :data-mode="store.settings.color_mode"
     :data-theme="store.settings.theme_color"
     @touchstart.passive="noopTouch"
@@ -12,6 +13,7 @@
         class="qr--button menu_button interactable timeloop-qr-btn"
         title="打开时空回溯系统"
         @click.stop="toggleModal"
+        @touchend.stop.prevent="toggleModal"
       >
         <span class="timeloop-qr-symbol">↺</span>
         <span>时空回溯</span>
@@ -19,8 +21,13 @@
     </Teleport>
 
     <!-- 主模态框 -->
-    <div v-if="store.isModalOpen && !store.isMinimized" class="timeloop-overlay" @click.self="onOverlayClick">
-      <div class="timeloop-modal" @click.stop>
+    <div
+      v-if="store.isModalOpen && !store.isMinimized"
+      class="timeloop-overlay"
+      :style="overlayViewportStyle"
+      @click.self="onOverlayClick"
+    >
+      <div class="timeloop-modal" :style="modalViewportStyle" @click.stop>
         <!-- 顶部栏 -->
         <header class="timeloop-header">
           <div class="timeloop-brand">
@@ -140,42 +147,32 @@
       </div>
     </div>
 
-    <!-- 可自由拖拽移动 & 静止自动半透明虚化的最小化悬浮球 -->
+    <!-- 小巧圆形悬浮球（仅在最小化窗口或后台回溯时显示，可自由拖动，轻触即展开） -->
     <div
       v-if="showFloatingBall"
       ref="floatingBallRef"
       class="timeloop-minimized-dock"
       :class="{
+        'is-busy': isBusy,
         'is-dragging': isBallDragging,
         'is-idle': isBallIdle && !isBusy && !isBallDragging,
       }"
       :style="floatingBallStyle"
+      role="button"
+      tabindex="0"
+      :aria-label="isBusy ? '正在回溯总结中，点击展开' : '展开时空回溯'"
+      :title="isBusy ? '正在回溯总结中 · 点击展开（可按住拖动）' : '点击展开时空回溯（可按住拖动）'"
+      @touchstart.passive="onBallTouchStart"
+      @touchmove="onBallTouchMove"
+      @touchend="onBallTouchEnd"
       @pointerdown="onBallPointerDown"
       @pointerenter="wakeUpFloatingBall"
+      @click.stop="onBallClick"
     >
-      <button
-        type="button"
-        class="timeloop-minimized-pill"
-        :class="{ 'is-busy': isBusy }"
-        :title="isBusy ? '正在回溯总结中 · 点击展开（可按住自由拖动位置）' : '点击展开时空回溯（可按住自由拖动到任意位置）'"
-      >
-        <span class="tl-pill-icon" :class="{ 'tl-spin': isBusy }">
-          <FlatIcon name="loop" />
-        </span>
-        <span class="tl-pill-text">
-          {{ isBusy ? '正在回溯总结中 · 点击展开' : '时空回溯 · 点击展开' }}
-        </span>
-      </button>
-      <button
-        v-if="!isBusy"
-        type="button"
-        class="timeloop-minimized-close"
-        title="关闭时空回溯窗口"
-        aria-label="关闭"
-        @click.stop="closeModal"
-      >
-        <FlatIcon name="close" />
-      </button>
+      <span class="tl-pill-icon" :class="{ 'tl-spin': isBusy }">
+        <FlatIcon name="loop" />
+      </span>
+      <span v-if="isBusy" class="tl-ball-badge" />
     </div>
   </div>
 </template>
@@ -302,7 +299,7 @@ function toggleModal() {
 }
 
 function onOverlayClick() {
-  if (Date.now() - store.lastOpenedAt < 380) {
+  if (Date.now() - store.lastOpenedAt < 550) {
     return;
   }
   closeModal();
@@ -315,6 +312,7 @@ function minimizeModal() {
 }
 
 function restoreModal() {
+  store.lastOpenedAt = Date.now();
   store.isMinimized = false;
   store.openModal();
 }
@@ -324,10 +322,57 @@ const isBallDragging = ref(false);
 const isBallIdle = ref(false);
 const ballDragPos = ref<{ x: number; y: number } | null>(null);
 let ballIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let lastBallPointerRestoreAt = 0;
+
+// iOS Safari 软键盘弹出时适配 visualViewport 高度与偏移，防止弹窗被顶出屏幕外
+const visualViewportHeight = ref<number | null>(null);
+const visualViewportOffsetTop = ref<number>(0);
+
+function updateVisualViewportMetrics() {
+  try {
+    const parentWin = window.parent || window;
+    const vv = parentWin.visualViewport;
+    if (!vv) {
+      visualViewportHeight.value = null;
+      visualViewportOffsetTop.value = 0;
+      return;
+    }
+    const layoutH = parentWin.innerHeight || vv.height;
+    // 当软键盘弹出导致可视高度明显小于布局视口时同步修正
+    if (layoutH - vv.height > 100) {
+      visualViewportHeight.value = Math.round(vv.height);
+      visualViewportOffsetTop.value = Math.max(0, Math.round(vv.offsetTop));
+    } else {
+      visualViewportHeight.value = null;
+      visualViewportOffsetTop.value = 0;
+    }
+  } catch {
+    visualViewportHeight.value = null;
+    visualViewportOffsetTop.value = 0;
+  }
+}
+
+const overlayViewportStyle = computed<Record<string, string>>(() => {
+  if (!visualViewportHeight.value) return {};
+  return {
+    top: `${visualViewportOffsetTop.value}px`,
+    height: `${visualViewportHeight.value}px`,
+    bottom: 'auto',
+  };
+});
+
+const modalViewportStyle = computed<Record<string, string>>(() => {
+  if (!visualViewportHeight.value) return {};
+  return {
+    maxHeight: `${Math.max(240, visualViewportHeight.value - 12)}px`,
+  };
+});
 
 const showFloatingBall = computed(() => {
   if (store.isModalOpen && !store.isMinimized) return false;
   if (isBusy.value) return true;
+  if (store.settings.floating_ball_mode === 'always') return true;
+  if (store.settings.floating_ball_mode === 'off') return false;
   return store.isModalOpen && store.isMinimized;
 });
 
@@ -340,8 +385,8 @@ const floatingBallStyle = computed<Record<string, string>>(() => {
       bottom: 'auto',
     };
   }
-  const xPct = Math.min(92, Math.max(2, store.settings.floating_ball_x_percent ?? 78));
-  const yPct = Math.min(92, Math.max(4, store.settings.floating_ball_y_percent ?? 76));
+  const xPct = Math.min(88, Math.max(3, store.settings.floating_ball_x_percent ?? 76));
+  const yPct = Math.min(90, Math.max(5, store.settings.floating_ball_y_percent ?? 74));
   return {
     left: `${xPct}vw`,
     top: `${yPct}vh`,
@@ -362,36 +407,123 @@ function wakeUpFloatingBall() {
   scheduleBallIdle();
 }
 
+let lastBallDragEndAt = 0;
+let ballTouchState: {
+  startX: number;
+  startY: number;
+  startLeft: number;
+  startTop: number;
+  width: number;
+  height: number;
+  moved: boolean;
+} | null = null;
+
+function onBallClick() {
+  if (isBallDragging.value) return;
+  if (Date.now() - lastBallPointerRestoreAt < 450) return;
+  if (Date.now() - lastBallDragEndAt < 320) return;
+  lastBallPointerRestoreAt = Date.now();
+  restoreModal();
+}
+
+function onBallTouchStart(e: TouchEvent) {
+  wakeUpFloatingBall();
+  if (e.touches.length !== 1) {
+    ballTouchState = null;
+    return;
+  }
+  const el = floatingBallRef.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const t = e.touches[0];
+  ballTouchState = {
+    startX: t.clientX,
+    startY: t.clientY,
+    startLeft: rect.left,
+    startTop: rect.top,
+    width: rect.width || 34,
+    height: rect.height || 34,
+    moved: false,
+  };
+}
+
+function onBallTouchMove(e: TouchEvent) {
+  if (!ballTouchState || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const dx = t.clientX - ballTouchState.startX;
+  const dy = t.clientY - ballTouchState.startY;
+  if (!ballTouchState.moved && Math.hypot(dx, dy) < 12) return;
+  ballTouchState.moved = true;
+  isBallDragging.value = true;
+  if (e.cancelable) {
+    e.preventDefault();
+  }
+  const el = floatingBallRef.value;
+  const viewWin = el?.ownerDocument?.defaultView || window.parent || window;
+  const vw = Math.max(viewWin.innerWidth || 360, 200);
+  const vh = Math.max(viewWin.innerHeight || 640, 200);
+  const nextX = Math.min(vw - ballTouchState.width - 6, Math.max(6, ballTouchState.startLeft + dx));
+  const nextY = Math.min(vh - ballTouchState.height - 6, Math.max(6, ballTouchState.startTop + dy));
+  ballDragPos.value = { x: nextX, y: nextY };
+}
+
+function onBallTouchEnd(e: TouchEvent) {
+  if (!ballTouchState) return;
+  const state = ballTouchState;
+  ballTouchState = null;
+
+  if (!state.moved) {
+    isBallDragging.value = false;
+    ballDragPos.value = null;
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+    lastBallPointerRestoreAt = Date.now();
+    restoreModal();
+    return;
+  }
+
+  const el = floatingBallRef.value;
+  const viewWin = el?.ownerDocument?.defaultView || window.parent || window;
+  const vw = Math.max(viewWin.innerWidth || 360, 200);
+  const vh = Math.max(viewWin.innerHeight || 640, 200);
+  const finalPos = ballDragPos.value || { x: state.startLeft, y: state.startTop };
+  store.updateFloatingBallFreePosition((finalPos.x / vw) * 100, (finalPos.y / vh) * 100);
+  lastBallDragEndAt = Date.now();
+  ballDragPos.value = null;
+  setTimeout(() => {
+    isBallDragging.value = false;
+  }, 60);
+  scheduleBallIdle();
+}
+
 function onBallPointerDown(e: PointerEvent) {
+  // 触摸屏已由 onBallTouchStart/Move/End 处理，避免 iOS WebKit Pointer 与 Touch 冲突
+  if (e.pointerType === 'touch') return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
-  const target = e.target as HTMLElement | null;
-  if (target?.closest('.timeloop-minimized-close')) return;
 
   const el = floatingBallRef.value;
   if (!el) return;
 
   wakeUpFloatingBall();
 
-  const viewWin = el.ownerDocument?.defaultView || window.parent || window;
+  const doc = el.ownerDocument || window.parent.document;
+  const viewWin = doc.defaultView || window.parent || window;
   const rect = el.getBoundingClientRect();
   const startX = e.clientX;
   const startY = e.clientY;
   const startLeft = rect.left;
   const startTop = rect.top;
-  const width = rect.width || 140;
-  const height = rect.height || 40;
+  const width = rect.width || 38;
+  const height = rect.height || 38;
+  const pointerId = e.pointerId;
   let moved = false;
 
-  try {
-    el.setPointerCapture(e.pointerId);
-  } catch {
-    // ignore
-  }
-
   const onPointerMove = (ev: PointerEvent) => {
+    if (ev.pointerId !== pointerId) return;
     const dx = ev.clientX - startX;
     const dy = ev.clientY - startY;
-    if (!moved && Math.hypot(dx, dy) < 6) return;
+    if (!moved && Math.hypot(dx, dy) < 8) return;
     moved = true;
     isBallDragging.value = true;
 
@@ -402,22 +534,19 @@ function onBallPointerDown(e: PointerEvent) {
     ballDragPos.value = { x: nextX, y: nextY };
   };
 
-  const onPointerUp = (ev: PointerEvent) => {
-    el.removeEventListener('pointermove', onPointerMove);
-    el.removeEventListener('pointerup', onPointerUp);
-    el.removeEventListener('pointercancel', onPointerUp);
-    try {
-      if (el.hasPointerCapture(ev.pointerId)) {
-        el.releasePointerCapture(ev.pointerId);
-      }
-    } catch {
-      // ignore
-    }
+  const finishPointer = (ev: PointerEvent, cancelled: boolean) => {
+    if (ev.pointerId !== pointerId) return;
+    doc.removeEventListener('pointermove', onPointerMove, true);
+    doc.removeEventListener('pointerup', onPointerUp, true);
+    doc.removeEventListener('pointercancel', onPointerCancel, true);
 
     if (!moved) {
       isBallDragging.value = false;
       ballDragPos.value = null;
-      restoreModal();
+      if (!cancelled) {
+        lastBallPointerRestoreAt = Date.now();
+        restoreModal();
+      }
       return;
     }
 
@@ -428,14 +557,20 @@ function onBallPointerDown(e: PointerEvent) {
     const yPercent = (finalPos.y / vh) * 100;
 
     store.updateFloatingBallFreePosition(xPercent, yPercent);
-    isBallDragging.value = false;
+    lastBallDragEndAt = Date.now();
+    setTimeout(() => {
+      isBallDragging.value = false;
+    }, 60);
     ballDragPos.value = null;
     scheduleBallIdle();
   };
 
-  el.addEventListener('pointermove', onPointerMove);
-  el.addEventListener('pointerup', onPointerUp);
-  el.addEventListener('pointercancel', onPointerUp);
+  const onPointerUp = (ev: PointerEvent) => finishPointer(ev, false);
+  const onPointerCancel = (ev: PointerEvent) => finishPointer(ev, true);
+
+  doc.addEventListener('pointermove', onPointerMove, true);
+  doc.addEventListener('pointerup', onPointerUp, true);
+  doc.addEventListener('pointercancel', onPointerCancel, true);
 }
 
 function closeModal() {
@@ -829,6 +964,13 @@ onMounted(() => {
   scheduleBallIdle();
   window.parent.document.addEventListener('keydown', handleKeydown);
   window.document.addEventListener('keydown', handleKeydown);
+  try {
+    const vv = (window.parent || window).visualViewport;
+    vv?.addEventListener('resize', updateVisualViewportMetrics);
+    vv?.addEventListener('scroll', updateVisualViewportMetrics);
+  } catch {
+    // ignore
+  }
 });
 
 onUnmounted(() => {
@@ -836,7 +978,14 @@ onUnmounted(() => {
   if (ballIdleTimer) clearTimeout(ballIdleTimer);
   if (savedFeedbackTimer) clearTimeout(savedFeedbackTimer);
   window.parent.document.removeEventListener('keydown', handleKeydown);
-  window.document.removeEventListener('keydown', handleKeydown);
+  window.document.addEventListener('keydown', handleKeydown);
+  try {
+    const vv = (window.parent || window).visualViewport;
+    vv?.removeEventListener('resize', updateVisualViewportMetrics);
+    vv?.removeEventListener('scroll', updateVisualViewportMetrics);
+  } catch {
+    // ignore
+  }
   unregisterHorae.forEach(fn => fn());
 });
 </script>

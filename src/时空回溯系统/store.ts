@@ -201,6 +201,12 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
       parsed.max_chunk_chars = 32000;
     }
 
+    // 5. 默认关闭开机常驻悬浮球，仅在最小化窗口或后台回溯时显示（一次性迁移旧版默认 'always'）
+    if (!parsed.floating_ball_mode_v3) {
+      parsed.floating_ball_mode = 'minimized_only';
+      parsed.floating_ball_mode_v3 = true;
+    }
+
     return parsed;
   }
 
