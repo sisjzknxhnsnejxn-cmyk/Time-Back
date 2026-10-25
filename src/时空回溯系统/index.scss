@@ -1588,27 +1588,27 @@
 /* 2. 移动端竖屏通用适配（Android 手机 & iOS iPhone <= 640px） */
 @media (max-width: 640px) {
   [script_id] .timeloop-overlay {
-    align-items: flex-end;
-    padding: 0;
+    align-items: center;
+    justify-content: center;
+    padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
+      max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
   }
 
   [script_id] .timeloop-modal {
-    width: 100%;
-    max-height: 92vh;
-    max-height: 92dvh;
-    border-radius: 18px 18px 0 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    width: min(560px, 100%);
+    max-height: 86vh;
+    max-height: 86dvh;
+    border-radius: 18px;
+    border: 1px solid var(--tl-border);
+    padding-bottom: 0;
   }
 
   [script_id] .timeloop-header,
   [script_id] .timeloop-statusbar,
   [script_id] .timeloop-tabs,
   [script_id] .timeloop-content {
-    padding-left: max(0.9rem, env(safe-area-inset-left, 0px));
-    padding-right: max(0.9rem, env(safe-area-inset-right, 0px));
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
   }
 
   /* 增大移动端顶部图标按钮与关闭按钮的触控热区，符合 iOS/Android 触控规范 */
@@ -1679,19 +1679,19 @@
   }
 
   [script_id] .tl-help-backdrop {
-    padding: 0;
-    align-items: flex-end;
+    padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
+      max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
+    align-items: center;
+    justify-content: center;
   }
 
   [script_id] .tl-help-sheet {
-    width: 100%;
-    max-height: 88vh;
-    max-height: 88dvh;
-    border-radius: 18px 18px 0 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    width: min(520px, 100%);
+    max-height: 84vh;
+    max-height: 84dvh;
+    border-radius: 18px;
+    border: 1px solid var(--tl-border);
+    padding-bottom: 0;
   }
 }
 

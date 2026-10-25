@@ -371,8 +371,6 @@ const modalViewportStyle = computed<Record<string, string>>(() => {
 const showFloatingBall = computed(() => {
   if (store.isModalOpen && !store.isMinimized) return false;
   if (isBusy.value) return true;
-  if (store.settings.floating_ball_mode === 'always') return true;
-  if (store.settings.floating_ball_mode === 'off') return false;
   return store.isModalOpen && store.isMinimized;
 });
 

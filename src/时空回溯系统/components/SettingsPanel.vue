@@ -43,40 +43,6 @@
           </button>
         </div>
       </div>
-
-      <div class="tl-setting-row">
-        <span class="tl-row-label">屏幕悬浮球</span>
-        <div class="tl-seg-group">
-          <button
-            type="button"
-            class="tl-seg-btn"
-            :class="{ active: store.settings.floating_ball_mode === 'always' }"
-            @click="store.setFloatingBallMode('always')"
-          >
-            常驻显示
-          </button>
-          <button
-            type="button"
-            class="tl-seg-btn"
-            :class="{ active: store.settings.floating_ball_mode === 'minimized_only' }"
-            @click="store.setFloatingBallMode('minimized_only')"
-          >
-            仅最小化时
-          </button>
-          <button
-            type="button"
-            class="tl-seg-btn"
-            :class="{ active: store.settings.floating_ball_mode === 'off' }"
-            @click="store.setFloatingBallMode('off')"
-          >
-            关闭
-          </button>
-        </div>
-      </div>
-
-      <div class="tl-api-hint" style="margin-top: 6px;">
-        开启「常驻显示」后，在任何移动端浏览器中均可直接点击屏幕上的半透明悬浮球打开系统（支持按住自由拖动位置，静止时自动虚化）。
-      </div>
     </div>
 
     <div class="tl-setting-card">
