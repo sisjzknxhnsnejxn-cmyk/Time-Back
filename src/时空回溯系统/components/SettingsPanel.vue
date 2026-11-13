@@ -69,9 +69,7 @@
 
       <!-- 模式 1：酒馆主聊天 AI -->
       <div v-if="store.settings.api_mode === 'main_api'" class="tl-api-mode-box">
-        <div class="tl-api-hint">
-          直接使用酒馆当前主聊天连接的 AI 接口与模型生成回溯总结，省心免配置。
-        </div>
+        <div class="tl-api-hint">直接使用酒馆当前主聊天连接的 AI 接口与模型生成回溯总结，省心免配置。</div>
       </div>
 
       <!-- 模式 2：自定义 API（支持多个配置管理、自定义命名、流式/非流式切换与测试） -->
@@ -176,11 +174,7 @@
               placeholder="sk-..."
               @input="store.syncActivePresetToLegacyFields()"
             />
-            <button
-              type="button"
-              class="tl-btn tl-btn-ghost tl-btn-sm"
-              @click="showApiKey = !showApiKey"
-            >
+            <button type="button" class="tl-btn tl-btn-ghost tl-btn-sm" @click="showApiKey = !showApiKey">
               {{ showApiKey ? '隐藏' : '显示' }}
             </button>
           </div>
@@ -380,11 +374,7 @@
       </div>
 
       <div class="tl-setting-row">
-        <button
-          type="button"
-          class="tl-btn tl-btn-ghost tl-btn-sm"
-          @click="showPromptEditor = !showPromptEditor"
-        >
+        <button type="button" class="tl-btn tl-btn-ghost tl-btn-sm" @click="showPromptEditor = !showPromptEditor">
           <FlatIcon name="edit" />
           <span>{{ showPromptEditor ? '收起提示词设置' : '自定义总结提示词' }}</span>
         </button>
@@ -432,12 +422,7 @@
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
-import {
-  fetchOpenAiModels,
-  normalizeOpenAiBaseUrl,
-  testCustomApiConnection,
-  type ApiTestResult,
-} from '../plugins';
+import { fetchOpenAiModels, normalizeOpenAiBaseUrl, testCustomApiConnection, type ApiTestResult } from '../plugins';
 import { useTimeLoopStore } from '../store';
 import type { ApiMode, ThemeColor } from '../types';
 import FlatIcon from './FlatIcon.vue';
@@ -615,4 +600,3 @@ onUnmounted(() => {
   if (deletePresetTimer) clearTimeout(deletePresetTimer);
 });
 </script>
-

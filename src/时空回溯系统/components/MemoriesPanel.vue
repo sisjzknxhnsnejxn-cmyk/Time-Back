@@ -5,11 +5,7 @@
         <span>共 {{ memories.length }} 条保留记忆</span>
       </div>
       <div class="tl-toolbar-actions">
-        <button
-          type="button"
-          class="tl-btn tl-btn-secondary tl-btn-sm"
-          @click="toggleCreateForm"
-        >
+        <button type="button" class="tl-btn tl-btn-secondary tl-btn-sm" @click="toggleCreateForm">
           <FlatIcon :name="isCreating ? 'close' : 'plus'" />
           <span>{{ isCreating ? '取消新增' : '新增记忆' }}</span>
         </button>
@@ -28,12 +24,7 @@
     <div v-if="isCreating" class="tl-memory-editor-card">
       <div class="tl-field">
         <label class="tl-label">记忆标题 / 楼层范围</label>
-        <input
-          v-model="newRangeLabel"
-          type="text"
-          class="tl-input"
-          placeholder="例如：第一轮回（第 5 至 18 层）"
-        />
+        <input v-model="newRangeLabel" type="text" class="tl-input" placeholder="例如：第一轮回（第 5 至 18 层）" />
       </div>
       <div class="tl-field">
         <label class="tl-label">记忆内容</label>
@@ -101,29 +92,17 @@
           <div class="tl-memory-content">{{ item.content }}</div>
 
           <div class="tl-memory-foot">
-            <button
-              type="button"
-              class="tl-btn tl-btn-secondary tl-btn-sm"
-              @click="startEdit(item)"
-            >
+            <button type="button" class="tl-btn tl-btn-secondary tl-btn-sm" @click="startEdit(item)">
               <FlatIcon :name="justSavedId === item.id ? 'check' : 'edit'" />
               <span>{{ justSavedId === item.id ? '已保存修改' : '编辑内容' }}</span>
             </button>
 
-            <button
-              type="button"
-              class="tl-btn tl-btn-ghost tl-btn-sm"
-              @click="copyMemory(item)"
-            >
+            <button type="button" class="tl-btn tl-btn-ghost tl-btn-sm" @click="copyMemory(item)">
               <FlatIcon :name="copiedId === item.id ? 'check' : 'copy'" />
               <span>{{ copiedId === item.id ? '已复制' : '复制' }}</span>
             </button>
 
-            <button
-              type="button"
-              class="tl-btn tl-btn-danger-ghost tl-btn-sm"
-              @click="handleDeleteClick(item.id)"
-            >
+            <button type="button" class="tl-btn tl-btn-danger-ghost tl-btn-sm" @click="handleDeleteClick(item.id)">
               <FlatIcon name="trash" />
               <span>{{ confirmDeleteId === item.id ? '确认删除？' : '删除' }}</span>
             </button>

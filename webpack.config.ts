@@ -50,8 +50,9 @@ function common_path(lhs: string, rhs: string) {
 
 function glob_script_files() {
   const results: string[] = [];
+  const pattern = process.env.ONLY_SRC === 'true' ? 'src/**/index.{ts,tsx,js,jsx}' : '{示例,src}/**/index.{ts,tsx,js,jsx}';
 
-  fs.globSync(`{示例,src}/**/index.{ts,tsx,js,jsx}`)
+  fs.globSync(pattern)
     .filter(
       file => process.env.CI !== 'true' || !fs.readFileSync(path.join(import.meta.dirname, file)).includes('@no-ci'),
     )
@@ -113,6 +114,7 @@ const dump = () => {
 };
 const dump_debounced = _.debounce(dump, 500, { leading: true, trailing: false });
 function schema_dump(compiler: webpack.Compiler) {
+  if (process.env.ONLY_SRC === 'true') return;
   if (!compiler.options.watch) {
     dump_debounced();
     return;
@@ -135,6 +137,7 @@ const bundle = () => {
 };
 const bundle_debounced = _.debounce(bundle, 500, { leading: true, trailing: false });
 function tavern_sync(compiler: webpack.Compiler) {
+  if (process.env.ONLY_SRC === 'true') return;
   if (!compiler.options.watch) {
     bundle_debounced();
     return;
@@ -464,7 +467,7 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
         new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }),
         new webpack.DefinePlugin({
           __VUE_OPTIONS_API__: false,
-          __VUE_PROD_DEVTOOLS__: process.env.CI !== 'true',
+          __VUE_PROD_DEVTOOLS__: false,
           __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
         }),
       )
@@ -536,6 +539,10 @@ function parse_configuration(entry: Entry): (_env: any, argv: any) => webpack.Co
         fs.existsSync(path.join(context, request)) ||
         fs.existsSync(request)
       ) {
+        return callback();
+      }
+
+      if (['pinia', 'klona', '@vue/devtools-api', 'perfect-debounce', 'hookable', 'birpc'].some(key => request === key || request.startsWith(`${key}/`))) {
         return callback();
       }
 

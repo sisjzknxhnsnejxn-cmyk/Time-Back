@@ -42,7 +42,11 @@
           </div>
         </div>
         <div v-else class="tl-slot-empty">
-          {{ index === 0 ? '尚未记录锚点，点击下方按钮记录当前楼层（或在 # 输入框指定历史楼层）' : `已解锁第 ${index + 1} 槽位，可记录当前或任意历史楼层锚点` }}
+          {{
+            index === 0
+              ? '尚未记录锚点，点击下方按钮记录当前楼层（或在 # 输入框指定历史楼层）'
+              : `已解锁第 ${index + 1} 槽位，可记录当前或任意历史楼层锚点`
+          }}
         </div>
 
         <div class="tl-slot-actions">
@@ -68,12 +72,7 @@
             />
           </div>
 
-          <button
-            type="button"
-            class="tl-btn tl-btn-secondary"
-            :disabled="isBusy"
-            @click="onSaveClick(key)"
-          >
+          <button type="button" class="tl-btn tl-btn-secondary" :disabled="isBusy" @click="onSaveClick(key)">
             <FlatIcon :name="justSavedKey === key ? 'check' : slots[key] ? 'refresh' : 'save'" />
             <span>{{ getSaveButtonLabel(key) }}</span>
           </button>

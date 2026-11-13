@@ -505,10 +505,10 @@ export function hasDatabaseDataInChat(): boolean {
       const extra = m.extra as Record<string, unknown> | undefined;
       return Boolean(
         m.TavernDB_ACU_IsolatedData ||
-          m.TavernDB_ACU_Data ||
-          m.TavernDB_ACU_Summary ||
-          extra?.TavernDB_ACU_IsolatedData ||
-          extra?.acu_summary,
+        m.TavernDB_ACU_Data ||
+        m.TavernDB_ACU_Summary ||
+        extra?.TavernDB_ACU_IsolatedData ||
+        extra?.acu_summary,
       );
     });
   } catch {
@@ -632,11 +632,7 @@ export function captureMvuSnapshot(floor: number, currentMaxFloor?: number): Rec
 
 export function captureMvuChatSnapshot(targetFloor?: number, currentMaxFloor?: number): Record<string, unknown> | null {
   try {
-    if (
-      typeof targetFloor === 'number' &&
-      typeof currentMaxFloor === 'number' &&
-      targetFloor < currentMaxFloor
-    ) {
+    if (typeof targetFloor === 'number' && typeof currentMaxFloor === 'number' && targetFloor < currentMaxFloor) {
       const historicalMvu = captureMvuSnapshot(targetFloor, currentMaxFloor);
       if (historicalMvu) {
         return historicalMvu;
@@ -755,11 +751,7 @@ export function captureDatabaseSnapshot(
       database_snapshot = JSON.stringify(exported);
     }
 
-    if (
-      typeof targetFloor === 'number' &&
-      typeof currentMaxFloor === 'number' &&
-      targetFloor < currentMaxFloor
-    ) {
+    if (typeof targetFloor === 'number' && typeof currentMaxFloor === 'number' && targetFloor < currentMaxFloor) {
       const reconstructed = reconstructDatabaseJsonAtFloor(targetFloor, parsedObj);
       if (reconstructed) {
         database_snapshot = reconstructed.jsonStr;
@@ -830,11 +822,7 @@ export function captureChatMetadataSnapshot(
       if (k === 'timeloop_archive_v2' || k === 'variables') continue;
       snap[k] = safeClone(v);
     }
-    if (
-      typeof targetFloor === 'number' &&
-      typeof currentMaxFloor === 'number' &&
-      targetFloor < currentMaxFloor
-    ) {
+    if (typeof targetFloor === 'number' && typeof currentMaxFloor === 'number' && targetFloor < currentMaxFloor) {
       const ext = snap.extensions as Record<string, unknown> | undefined;
       const engramExt = ext?.engram as Record<string, unknown> | undefined;
       const scopeState = engramExt?.scope_state as Record<string, unknown> | undefined;
@@ -882,11 +870,8 @@ export function captureHoraeSnapshot(floor: number, currentMaxFloor?: number): R
         }
       }
     }
-    const isHistorical =
-      typeof currentMaxFloor === 'number' && floor < currentMaxFloor;
-    const latestState = isHistorical
-      ? null
-      : safeClone(getHoraeApi()?.getLatestState?.() ?? null);
+    const isHistorical = typeof currentMaxFloor === 'number' && floor < currentMaxFloor;
+    const latestState = isHistorical ? null : safeClone(getHoraeApi()?.getLatestState?.() ?? null);
     if (Object.keys(floorsMeta).length === 0 && !latestState) {
       return null;
     }
@@ -901,9 +886,7 @@ export function captureHoraeSnapshot(floor: number, currentMaxFloor?: number): R
 
 function resolveCurrentRawChatId(): string {
   try {
-    const ctx = (
-      SillyTavern as unknown as { getContext?: () => { chatId?: string } }
-    )?.getContext?.();
+    const ctx = (SillyTavern as unknown as { getContext?: () => { chatId?: string } })?.getContext?.();
     const raw = ctx?.chatId ?? (SillyTavern as unknown as { chatId?: string })?.chatId ?? '';
     return typeof raw === 'string' ? raw.trim() : '';
   } catch {
@@ -1136,10 +1119,7 @@ export async function captureEngramSnapshot(
 ): Promise<Record<string, unknown> | null> {
   const data = await readCurrentEngramData();
   if (!data) return null;
-  if (
-    typeof targetFloor === 'number' &&
-    (currentMaxFloor === undefined || targetFloor < currentMaxFloor)
-  ) {
+  if (typeof targetFloor === 'number' && (currentMaxFloor === undefined || targetFloor < currentMaxFloor)) {
     return truncateEngramSnapshotToFloor(data, targetFloor) as unknown as Record<string, unknown>;
   }
   return data as unknown as Record<string, unknown>;
@@ -1239,7 +1219,7 @@ export async function restoreEngramSnapshot(slot: SlotItem, anchorFloor: number)
         try {
           const meta = SillyTavern?.chatMetadata as Record<string, unknown> | undefined;
           if (meta && typeof meta === 'object') {
-            const extensions = ((meta.extensions as Record<string, unknown> | undefined) ?? {});
+            const extensions = (meta.extensions as Record<string, unknown> | undefined) ?? {};
             extensions.engram = safeClone(snap.extensionMeta);
             meta.extensions = extensions;
           }
@@ -1269,19 +1249,14 @@ export async function restoreEngramSnapshot(slot: SlotItem, anchorFloor: number)
           }
           if (db.objectStoreNames.contains('meta')) {
             const metaStore = tx.objectStore('meta');
-            const scopeState = safeClone(
-              (existingMeta.scope_state as Record<string, unknown> | undefined) ?? {},
-            );
+            const scopeState = safeClone((existingMeta.scope_state as Record<string, unknown> | undefined) ?? {});
             if (
               typeof scopeState.last_summarized_floor === 'number' &&
               scopeState.last_summarized_floor > anchorFloor
             ) {
               scopeState.last_summarized_floor = anchorFloor;
             }
-            if (
-              typeof scopeState.last_extracted_floor === 'number' &&
-              scopeState.last_extracted_floor > anchorFloor
-            ) {
+            if (typeof scopeState.last_extracted_floor === 'number' && scopeState.last_extracted_floor > anchorFloor) {
               scopeState.last_extracted_floor = anchorFloor;
             }
             metaStore.put(scopeState, 'scope_state');
@@ -1591,9 +1566,7 @@ function truncateQqjRecordObject(
           }
         }
       }
-      filtered.push(
-        truncateQqjRecordObject(elem, targetFloor, maxKeptFloor, maxKeptAssistantSeq, lastAnchorText),
-      );
+      filtered.push(truncateQqjRecordObject(elem, targetFloor, maxKeptFloor, maxKeptAssistantSeq, lastAnchorText));
     }
     return filtered;
   }
@@ -1639,11 +1612,7 @@ function truncateQqjSnapshotToFloor(data: QqjSnapshotData, targetFloor: number):
   cloned.detailedFloors = (cloned.detailedFloors ?? []).filter(f => {
     const rawF = f as unknown as Record<string, unknown>;
     const fl =
-      typeof f.messageIndex === 'number'
-        ? f.messageIndex
-        : typeof rawF.floor === 'number'
-          ? (rawF.floor as number)
-          : 0;
+      typeof f.messageIndex === 'number' ? f.messageIndex : typeof rawF.floor === 'number' ? (rawF.floor as number) : 0;
     return fl <= targetFloor;
   });
 
@@ -1653,11 +1622,7 @@ function truncateQqjSnapshotToFloor(data: QqjSnapshotData, targetFloor: number):
   for (const f of cloned.detailedFloors) {
     const rawF = f as unknown as Record<string, unknown>;
     const fl =
-      typeof f.messageIndex === 'number'
-        ? f.messageIndex
-        : typeof rawF.floor === 'number'
-          ? (rawF.floor as number)
-          : 0;
+      typeof f.messageIndex === 'number' ? f.messageIndex : typeof rawF.floor === 'number' ? (rawF.floor as number) : 0;
     if (fl <= targetFloor) {
       if (fl > maxKeptFloor) maxKeptFloor = fl;
       if (typeof f.assistantSeq === 'number' && f.assistantSeq > maxKeptAssistantSeq) {
@@ -1757,10 +1722,7 @@ export async function captureQqjSnapshot(
 ): Promise<Record<string, unknown> | null> {
   const data = await readCurrentQqjData(true);
   if (!data) return null;
-  if (
-    typeof targetFloor === 'number' &&
-    (currentMaxFloor === undefined || targetFloor < currentMaxFloor)
-  ) {
+  if (typeof targetFloor === 'number' && (currentMaxFloor === undefined || targetFloor < currentMaxFloor)) {
     return truncateQqjSnapshotToFloor(data, targetFloor) as unknown as Record<string, unknown>;
   }
   return data as unknown as Record<string, unknown>;
@@ -1857,8 +1819,7 @@ async function syncFloorVisibilityAndCleanPluginMeta(
 ): Promise<number> {
   const anchorFloor = slot.floor;
   const nativeChat = getNativeChatArray();
-  const anchorMvuStat =
-    (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
+  const anchorMvuStat = (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
 
   // 1. 恢复 0 .. anchorFloor 的原生元数据
   if (Array.isArray(nativeChat)) {
@@ -1867,8 +1828,8 @@ async function syncFloorVisibilityAndCleanPluginMeta(
       const rawMes = nativeChat[i];
       if (!rawMes || typeof rawMes !== 'object') continue;
       const snapItem = snapshotMap.get(i);
-      const rawExtra = ((rawMes.extra as Record<string, unknown> | undefined) ?? {});
-      const rawData = ((rawMes.data as Record<string, unknown> | undefined) ?? {});
+      const rawExtra = (rawMes.extra as Record<string, unknown> | undefined) ?? {};
+      const rawData = (rawMes.data as Record<string, unknown> | undefined) ?? {};
 
       if (i === anchorFloor) {
         rawMes.is_system = false;
@@ -1897,9 +1858,7 @@ async function syncFloorVisibilityAndCleanPluginMeta(
         rawExtra.horae_meta = safeClone(savedHorae);
       }
 
-      const savedAcu =
-        snapItem?.acu_meta ??
-        (rawExtra._timeloop_backup_acu as Record<string, unknown> | undefined);
+      const savedAcu = snapItem?.acu_meta ?? (rawExtra._timeloop_backup_acu as Record<string, unknown> | undefined);
       if (savedAcu && typeof savedAcu === 'object') {
         for (const [k, v] of Object.entries(savedAcu)) {
           rawMes[k] = safeClone(v);
@@ -1934,7 +1893,7 @@ async function syncFloorVisibilityAndCleanPluginMeta(
             const sEntry = swipeArr[s];
             const sBackup = savedSwipeQqj[s];
             if (sEntry && typeof sEntry === 'object' && sBackup && typeof sBackup === 'object') {
-              const sExtra = ((sEntry.extra as Record<string, unknown> | undefined) ?? {});
+              const sExtra = (sEntry.extra as Record<string, unknown> | undefined) ?? {};
               for (const key of QQJ_FLOOR_KEYS) {
                 if (sBackup[key] !== undefined && sExtra[key] === undefined) {
                   sExtra[key] = safeClone(sBackup[key]);
@@ -1966,8 +1925,8 @@ async function syncFloorVisibilityAndCleanPluginMeta(
       rawMes.bbs_omit = true;
       rawMes.timeloop_abandoned = true;
 
-      const rawExtra = ((rawMes.extra as Record<string, unknown> | undefined) ?? {});
-      const rawData = ((rawMes.data as Record<string, unknown> | undefined) ?? {});
+      const rawExtra = (rawMes.extra as Record<string, unknown> | undefined) ?? {};
+      const rawData = (rawMes.data as Record<string, unknown> | undefined) ?? {};
       rawExtra.bbs_omit = true;
       rawExtra.timeloop_abandoned = true;
       rawData.bbs_omit = true;
@@ -2200,8 +2159,9 @@ async function restoreSlotExternalPlugins(slot: SlotItem): Promise<string[]> {
   // (e) 柏宝书通过 bbs_omit 标记已自动对齐到 anchorFloor，并派发消息变更事件通知重算
   if (getBaiBaiApi()) {
     try {
-      const evSource = (SillyTavern as unknown as { eventSource?: { emit?: (evt: string, ...args: unknown[]) => void } })
-        ?.eventSource;
+      const evSource = (
+        SillyTavern as unknown as { eventSource?: { emit?: (evt: string, ...args: unknown[]) => void } }
+      )?.eventSource;
       const evTypes = (SillyTavern as unknown as { event_types?: Record<string, string> })?.event_types;
       if (evSource?.emit && evTypes?.MESSAGE_EDITED) {
         evSource.emit(evTypes.MESSAGE_EDITED, anchorFloor);
@@ -2276,18 +2236,11 @@ export async function hideRewoundFloorsAndRestoreAnchor(
     }
   }
 
-  const horaeFloorsMap =
-    (slot.horae_snapshot as { floors?: Record<string, unknown> } | null)?.floors ?? {};
+  const horaeFloorsMap = (slot.horae_snapshot as { floors?: Record<string, unknown> } | null)?.floors ?? {};
 
-  let hiddenCount = await syncFloorVisibilityAndCleanPluginMeta(
-    slot,
-    maxFloor,
-    snapshotMap,
-    horaeFloorsMap,
-  );
+  let hiddenCount = await syncFloorVisibilityAndCleanPluginMeta(slot, maxFloor, snapshotMap, horaeFloorsMap);
 
-  const anchorMvuStat =
-    (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
+  const anchorMvuStat = (slot.mvu_snapshot as { stat_data?: Record<string, unknown> } | null)?.stat_data ?? null;
 
   const allUpToAnchor = getChatMessages(`0-${anchorFloor}`, { hide_state: 'all', include_swipes: false });
   const allAfterAnchor =
@@ -2307,7 +2260,11 @@ export async function hideRewoundFloorsAndRestoreAnchor(
     const fid = msg.message_id;
     const snap = snapshotMap.get(fid);
     const isAnchor = fid === anchorFloor;
-    const targetHidden = isAnchor ? false : snap && typeof snap.is_hidden === 'boolean' ? snap.is_hidden : Boolean(msg.is_hidden);
+    const targetHidden = isAnchor
+      ? false
+      : snap && typeof snap.is_hidden === 'boolean'
+        ? snap.is_hidden
+        : Boolean(msg.is_hidden);
 
     const nextData = safeClone({
       ...(msg.data ?? {}),
@@ -2348,9 +2305,7 @@ export async function hideRewoundFloorsAndRestoreAnchor(
       }
       delete nextExtra._timeloop_backup_qqj;
     }
-    const savedHorae =
-      snap?.horae_meta ??
-      (horaeFloorsMap[String(fid)] as Record<string, unknown> | undefined);
+    const savedHorae = snap?.horae_meta ?? (horaeFloorsMap[String(fid)] as Record<string, unknown> | undefined);
     if (savedHorae && typeof savedHorae === 'object') {
       nextExtra.horae_meta = safeClone(savedHorae);
     }
@@ -2426,20 +2381,26 @@ export async function hideRewoundFloorsAndRestoreAnchor(
         const rawMes = nativeChat[i];
         const snap = snapshotMap.get(i);
         const isAnchor = i === anchorFloor;
-        const targetHidden = isAnchor ? false : snap && typeof snap.is_hidden === 'boolean' ? snap.is_hidden : Boolean(rawMes?.is_hidden ?? rawMes?.is_system);
+        const targetHidden = isAnchor
+          ? false
+          : snap && typeof snap.is_hidden === 'boolean'
+            ? snap.is_hidden
+            : Boolean(rawMes?.is_hidden ?? rawMes?.is_system);
         if (rawMes) {
           rawMes.is_system = targetHidden;
           rawMes.is_hidden = targetHidden;
           const savedHorae =
             snap?.horae_meta ??
             (horaeFloorsMap[String(i)] as Record<string, unknown> | undefined) ??
-            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_horae_meta as Record<string, unknown> | undefined);
+            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_horae_meta as
+              Record<string, unknown> | undefined);
           if (savedHorae) {
             rawMes.horae_meta = safeClone(savedHorae);
           }
           const savedAcu =
             snap?.acu_meta ??
-            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_acu as Record<string, unknown> | undefined);
+            ((rawMes.extra as Record<string, unknown> | undefined)?._timeloop_backup_acu as
+              Record<string, unknown> | undefined);
           if (savedAcu) {
             for (const [k, v] of Object.entries(savedAcu)) {
               rawMes[k] = safeClone(v);
@@ -2512,8 +2473,7 @@ export function extractHoraeFloorMeta(floorId: number): string | null {
     if (!rawMes) return null;
 
     const meta = (rawMes.horae_meta ?? (rawMes.extra as Record<string, unknown> | undefined)?.horae_meta) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (!meta || typeof meta !== 'object') return null;
 
     const lines: string[] = [];
@@ -2578,7 +2538,6 @@ export function extractHoraeFloorMeta(floorId: number): string | null {
   }
 }
 
-
 export function extractDatabaseFloorMeta(floorId: number, message: ChatMessage): string | null {
   try {
     const rawChat = SillyTavern?.chat as Array<Record<string, unknown>> | undefined;
@@ -2601,8 +2560,7 @@ export function extractDatabaseFloorMeta(floorId: number, message: ChatMessage):
     }
 
     const isolated = (rawMes.TavernDB_ACU_IsolatedData ?? extra.TavernDB_ACU_IsolatedData) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (isolated && typeof isolated === 'object') {
       const sheetNotes: string[] = [];
       for (const tagData of Object.values(isolated)) {
@@ -2732,7 +2690,9 @@ export function buildBaiBaiSnapshotDiff(anchorFloor: number, currentFloor: numbe
       }
     }
 
-    return lines.length > 0 ? `【柏宝书·区间状态对比（第 ${anchorFloor} 层 → 第 ${currentFloor} 层）】：\n${lines.join('\n')}` : '';
+    return lines.length > 0
+      ? `【柏宝书·区间状态对比（第 ${anchorFloor} 层 → 第 ${currentFloor} 层）】：\n${lines.join('\n')}`
+      : '';
   } catch {
     return '';
   }
@@ -2810,10 +2770,7 @@ export function normalizeOpenAiBaseUrl(rawUrl: string): string {
 /**
  * 解析 SSE 流式响应 (text/event-stream) 并拼接完整回复
  */
-async function readOpenAiStreamResponse(
-  res: Response,
-  onChunk?: (accumulatedText: string) => void,
-): Promise<string> {
+async function readOpenAiStreamResponse(res: Response, onChunk?: (accumulatedText: string) => void): Promise<string> {
   if (!res.body) {
     const fallbackJson = await res.json();
     return String(
@@ -2829,14 +2786,7 @@ async function readOpenAiStreamResponse(
   let buffer = '';
   let accumulated = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? '';
-
+  const consumeSseLines = (lines: string[]) => {
     for (const rawLine of lines) {
       const line = rawLine.trim();
       if (!line || !line.startsWith('data:')) continue;
@@ -2858,6 +2808,22 @@ async function readOpenAiStreamResponse(
         // ignore partial json
       }
     }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        consumeSseLines(buffer.split(/\r?\n/));
+      }
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+    consumeSseLines(lines);
   }
 
   return accumulated.trim();
@@ -3174,10 +3140,7 @@ export function extractEngramFloorMeta(
   }
 }
 
-export function extractQqjFloorMeta(
-  floorId: number,
-  preloaded?: PreloadedPluginMemoryContext | null,
-): string | null {
+export function extractQqjFloorMeta(floorId: number, preloaded?: PreloadedPluginMemoryContext | null): string | null {
   try {
     const qqjData = preloaded?.qqj;
     const publicSnap = qqjData?.publicSnapshot ?? getQqjPublicBridge()?.getSnapshot?.() ?? null;
@@ -3198,20 +3161,24 @@ export function extractQqjFloorMeta(
         parts.push(`本层总结:${memFloor.summary.trim()}`);
       }
       if (Array.isArray(memFloor.events) && memFloor.events.length > 0) {
-        const evStrs = memFloor.events
-          .map(e => [e.title, e.summary].filter(Boolean).join(':'))
-          .filter(Boolean);
+        const evStrs = memFloor.events.map(e => [e.title, e.summary].filter(Boolean).join(':')).filter(Boolean);
         if (evStrs.length > 0) parts.push(`关键事件:${evStrs.join('；')}`);
       }
       if (Array.isArray(memFloor.actions) && memFloor.actions.length > 0) {
         const actStrs = memFloor.actions
-          .map(a => `${a.actor || ''}${a.action || ''}${a.target ? `→${a.target}` : ''}${a.outcome ? `(${a.outcome})` : ''}`)
+          .map(
+            a =>
+              `${a.actor || ''}${a.action || ''}${a.target ? `→${a.target}` : ''}${a.outcome ? `(${a.outcome})` : ''}`,
+          )
           .filter(Boolean);
         if (actStrs.length > 0) parts.push(`行动结果:${actStrs.join('；')}`);
       }
       if (Array.isArray(memFloor.commitments) && memFloor.commitments.length > 0) {
         const comStrs = memFloor.commitments
-          .map(c => `${c.actor || ''}承诺${c.target ? `对${c.target}` : ''}:${c.content || ''}${c.status ? `[${c.status}]` : ''}`)
+          .map(
+            c =>
+              `${c.actor || ''}承诺${c.target ? `对${c.target}` : ''}:${c.content || ''}${c.status ? `[${c.status}]` : ''}`,
+          )
           .filter(Boolean);
         if (comStrs.length > 0) parts.push(`约定承诺:${comStrs.join('；')}`);
       }

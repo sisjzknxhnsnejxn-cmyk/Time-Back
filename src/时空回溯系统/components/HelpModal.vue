@@ -1,5 +1,5 @@
 <template>
-  <div v-if="open" class="tl-help-backdrop" @click.self="$emit('close')">
+  <div v-if="open" class="tl-help-backdrop" :style="viewportStyle" @click.self="$emit('close')">
     <div class="tl-help-sheet" @click.stop>
       <div class="tl-help-header">
         <div class="tl-help-title">
@@ -15,7 +15,8 @@
         <section class="tl-help-card">
           <h4>这是什么？</h4>
           <p>
-            就像游戏的<strong>存档 / 读档</strong>。读档回到过去后，<strong>角色依然记得上一轮发生的事</strong>，而世界状态和插件数据都会恢复到存档时的样子。
+            就像游戏的<strong>存档 / 读档</strong
+            >。读档回到过去后，<strong>角色依然记得上一轮发生的事</strong>，而世界状态和插件数据都会恢复到存档时的样子。
           </p>
         </section>
 
@@ -25,14 +26,13 @@
             <li>
               <span class="tl-step-num">1</span>
               <div>
-                <strong>存档</strong>：点「记录当前层」。想给以前的楼层补存档，在左边 <code>#</code> 框填楼层号再点记录（最多 5 个存档）。
+                <strong>存档</strong>：点「记录当前层」。想给以前的楼层补存档，在左边
+                <code>#</code> 框填楼层号再点记录（最多 5 个存档）。
               </div>
             </li>
             <li>
               <span class="tl-step-num">2</span>
-              <div>
-                <strong>读档</strong>：剧情不满意或想走别的分支时，点对应存档的「回溯到此层」。
-              </div>
+              <div><strong>读档</strong>：剧情不满意或想走别的分支时，点对应存档的「回溯到此层」。</div>
             </li>
             <li>
               <span class="tl-step-num">3</span>
@@ -72,6 +72,7 @@ import FlatIcon from './FlatIcon.vue';
 
 defineProps<{
   open: boolean;
+  viewportStyle?: Record<string, string>;
 }>();
 
 defineEmits<{

@@ -130,7 +130,28 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
     if (mergedRaw.api_mode === 'memory_plugin_api') {
       mergedRaw.api_mode = 'main_api';
     }
-    const parsed = ApiSettingsSchema.parse(mergedRaw);
+    const defaults = ApiSettingsSchema.parse({});
+    const safeMerged: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(mergedRaw)) {
+      if (v !== undefined && v !== null) {
+        safeMerged[k] = v;
+      }
+    }
+    const parsedResult = ApiSettingsSchema.safeParse(safeMerged);
+    let parsed: ApiSettings;
+    if (parsedResult.success) {
+      parsed = parsedResult.data;
+    } else {
+      const recovered: Record<string, unknown> = { ...defaults };
+      for (const [k, v] of Object.entries(safeMerged)) {
+        const singleTry = ApiSettingsSchema.safeParse({ [k]: v });
+        if (singleTry.success) {
+          recovered[k] = (singleTry.data as Record<string, unknown>)[k];
+        }
+      }
+      const secondTry = ApiSettingsSchema.safeParse(recovered);
+      parsed = secondTry.success ? secondTry.data : defaults;
+    }
 
     // 1. 兼容迁移旧版 api_mode
     if (!mergedRaw.api_mode) {
@@ -207,6 +228,40 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
       parsed.floating_ball_mode_v3 = true;
     }
 
+    // 6. 迁移旧版百分比坐标到 0~1 可移动区间比例，使手机、平板与桌面端均可贴边停放
+    if (!parsed.floating_ball_ratio_v1) {
+      if (typeof mergedRaw.floating_ball_x_ratio === 'number' && Number.isFinite(mergedRaw.floating_ball_x_ratio)) {
+        parsed.floating_ball_x_ratio = Math.min(1, Math.max(0, mergedRaw.floating_ball_x_ratio));
+      } else if (
+        typeof mergedRaw.floating_ball_x_percent === 'number' &&
+        Number.isFinite(mergedRaw.floating_ball_x_percent)
+      ) {
+        const rawX = Number(mergedRaw.floating_ball_x_percent);
+        if (rawX >= 78) {
+          parsed.floating_ball_x_ratio = 1;
+        } else if (rawX <= 6) {
+          parsed.floating_ball_x_ratio = 0;
+        } else {
+          parsed.floating_ball_x_ratio = Math.min(1, Math.max(0, (rawX - 3) / 85));
+        }
+      } else {
+        parsed.floating_ball_x_ratio = parsed.floating_ball_side === 'left' ? 0 : 1;
+      }
+
+      if (typeof mergedRaw.floating_ball_y_ratio === 'number' && Number.isFinite(mergedRaw.floating_ball_y_ratio)) {
+        parsed.floating_ball_y_ratio = Math.min(1, Math.max(0, mergedRaw.floating_ball_y_ratio));
+      } else if (
+        typeof mergedRaw.floating_ball_y_percent === 'number' &&
+        Number.isFinite(mergedRaw.floating_ball_y_percent)
+      ) {
+        const rawY = Number(mergedRaw.floating_ball_y_percent);
+        parsed.floating_ball_y_ratio = Math.min(1, Math.max(0, (rawY - 5) / 85));
+      } else {
+        parsed.floating_ball_y_ratio = 0.78;
+      }
+      parsed.floating_ball_ratio_v1 = true;
+    }
+
     return parsed;
   }
 
@@ -218,7 +273,8 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
       chatVars = {};
     }
 
-    const varBindChatId = typeof chatVars.timeloop_archive_chat_id === 'string' ? chatVars.timeloop_archive_chat_id : '';
+    const varBindChatId =
+      typeof chatVars.timeloop_archive_chat_id === 'string' ? chatVars.timeloop_archive_chat_id : '';
     const hasChatArchivePayload =
       (chatVars.timeloop_slots && typeof chatVars.timeloop_slots === 'object') ||
       Array.isArray(chatVars.timeloop_memories);
@@ -268,7 +324,9 @@ export const useTimeLoopStore = defineStore('timeloop_store', () => {
       return '';
     }
 
-    const stContext = (window.parent as Window & { SillyTavern?: { getContext?: () => any } })?.SillyTavern?.getContext?.();
+    const stContext = (
+      window.parent as Window & { SillyTavern?: { getContext?: () => any } }
+    )?.SillyTavern?.getContext?.();
     const charName = stContext?.name2 || SillyTavern?.name2 || '角色';
     const userName = stContext?.name1 || SillyTavern?.name1 || '主角';
 
@@ -478,8 +536,17 @@ ${memoryBlocks}
   }
 
   function updateFloatingBallFreePosition(xPercent: number, yPercent: number) {
-    settings.value.floating_ball_x_percent = Math.min(92, Math.max(2, Math.round(xPercent * 10) / 10));
-    settings.value.floating_ball_y_percent = Math.min(92, Math.max(4, Math.round(yPercent * 10) / 10));
+    settings.value.floating_ball_x_percent = Math.min(98, Math.max(1, Math.round(xPercent * 10) / 10));
+    settings.value.floating_ball_y_percent = Math.min(98, Math.max(1, Math.round(yPercent * 10) / 10));
+  }
+
+  function updateFloatingBallRatio(xRatio: number, yRatio: number) {
+    const clampedX = Math.min(1, Math.max(0, Math.round(xRatio * 1000) / 1000));
+    const clampedY = Math.min(1, Math.max(0, Math.round(yRatio * 1000) / 1000));
+    settings.value.floating_ball_x_ratio = clampedX;
+    settings.value.floating_ball_y_ratio = clampedY;
+    settings.value.floating_ball_side = clampedX < 0.5 ? 'left' : 'right';
+    settings.value.floating_ball_ratio_v1 = true;
   }
 
   function openModal() {
@@ -610,12 +677,18 @@ ${memoryBlocks}
     return true;
   }
 
-  function addMemory(rangeLabel: string, content: string): LoopMemoryItem {
+  function addMemory(
+    rangeLabel: string,
+    content: string,
+    meta?: { anchor_key?: SlotKey; anchor_floor?: number },
+  ): LoopMemoryItem {
     const newItem: LoopMemoryItem = {
       id: generateUuid(),
       range_label: rangeLabel.trim() || '手动补充记录',
       content: content.trim(),
       timestamp: new Date().toLocaleTimeString(),
+      ...(meta?.anchor_key ? { anchor_key: meta.anchor_key } : {}),
+      ...(typeof meta?.anchor_floor === 'number' ? { anchor_floor: meta.anchor_floor } : {}),
     };
     chatData.value.timeloop_memories.push(newItem);
     latestMemoryId.value = newItem.id;
@@ -675,6 +748,7 @@ ${memoryBlocks}
     setFloatingBallMode,
     updateFloatingBallPosition,
     updateFloatingBallFreePosition,
+    updateFloatingBallRatio,
     setApiMode,
     selectCustomApiPreset,
     addCustomApiPreset,

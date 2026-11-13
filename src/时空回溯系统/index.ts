@@ -34,7 +34,7 @@ function findQrBarTimeLoopButton(target: HTMLElement | null): HTMLElement | null
   return null;
 }
 
-function enhanceNativeQrButtons(parentDoc: Document, onTrigger?: () => void) {
+function enhanceNativeQrButtons(parentDoc: Document, onTrigger?: () => void, cleanups?: Array<() => void>) {
   try {
     const candidates = parentDoc.querySelectorAll(QR_BUTTON_SELECTOR);
     candidates.forEach(node => {
@@ -51,32 +51,33 @@ function enhanceNativeQrButtons(parentDoc: Document, onTrigger?: () => void) {
       if (onTrigger && el.dataset.timeloopBound !== '1') {
         el.dataset.timeloopBound = '1';
         let directTouchStart: { x: number; y: number } | null = null;
-        el.addEventListener(
-          'touchstart',
-          (ev: TouchEvent) => {
-            if (ev.touches.length === 1) {
-              directTouchStart = { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
-            } else {
-              directTouchStart = null;
-            }
-          },
-          { passive: true },
-        );
-        el.addEventListener(
-          'touchend',
-          (ev: TouchEvent) => {
-            if (!directTouchStart || ev.changedTouches.length === 0) return;
-            const t = ev.changedTouches[0];
-            const dist = Math.hypot(t.clientX - directTouchStart.x, t.clientY - directTouchStart.y);
+        const onDirectTouchStart = (ev: TouchEvent) => {
+          if (ev.touches.length === 1) {
+            directTouchStart = { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+          } else {
             directTouchStart = null;
-            if (dist <= 18) {
-              onTrigger();
-            }
-          },
-          { passive: true },
-        );
-        el.addEventListener('click', () => {
+          }
+        };
+        const onDirectTouchEnd = (ev: TouchEvent) => {
+          if (!directTouchStart || ev.changedTouches.length === 0) return;
+          const t = ev.changedTouches[0];
+          const dist = Math.hypot(t.clientX - directTouchStart.x, t.clientY - directTouchStart.y);
+          directTouchStart = null;
+          if (dist <= 18) {
+            onTrigger();
+          }
+        };
+        const onDirectClick = () => {
           onTrigger();
+        };
+        el.addEventListener('touchstart', onDirectTouchStart, { passive: true });
+        el.addEventListener('touchend', onDirectTouchEnd, { passive: true });
+        el.addEventListener('click', onDirectClick);
+        cleanups?.push(() => {
+          delete el.dataset.timeloopBound;
+          el.removeEventListener('touchstart', onDirectTouchStart);
+          el.removeEventListener('touchend', onDirectTouchEnd);
+          el.removeEventListener('click', onDirectClick);
         });
       }
     });
@@ -96,9 +97,9 @@ function init() {
   const hasCloudLoaderHook = typeof win.__TIMELOOP_REGISTER_TOGGLE__ === 'function';
 
   // 若云端加载器已注册过脚本按钮且 DOM 中已存在，避免重复调用 replaceScriptButtons 导致移动端按钮节点重建失联
-  const existingQrBtn = Array.from(
-    parentDoc.querySelectorAll('#qr--bar .qr--button, .qr--buttons .qr--button'),
-  ).some(el => (el.textContent || '').includes('时空回溯'));
+  const existingQrBtn = Array.from(parentDoc.querySelectorAll('#qr--bar .qr--button, .qr--buttons .qr--button')).some(
+    el => (el.textContent || '').includes('时空回溯'),
+  );
 
   if (!hasCloudLoaderHook || !existingQrBtn) {
     try {
@@ -145,9 +146,13 @@ function init() {
     win.__TIMELOOP_REGISTER_TOGGLE__(handleQrButtonTrigger);
   }
 
-  enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger);
-  const enhanceTimer = setTimeout(() => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger), 500);
-  const enhanceInterval = setInterval(() => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger), 2000);
+  const qrButtonCleanups: Array<() => void> = [];
+  enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger, qrButtonCleanups);
+  const enhanceTimer = setTimeout(() => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger, qrButtonCleanups), 500);
+  const enhanceInterval = setInterval(
+    () => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger, qrButtonCleanups),
+    2000,
+  );
 
   // DOM 级点击 + iOS 触摸轻触 (Tap) 双重兜底：
   // 解决 iOS 浏览器中非 <button> 的 .qr--button 不派发 click、Text 节点无 closest 方法、或滚动容器吞噬点击的问题
@@ -201,7 +206,7 @@ function init() {
 
   const chatChangeListener = eventOn(tavern_events.CHAT_CHANGED, () => {
     store.refreshChatSlots();
-    setTimeout(() => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger), 200);
+    setTimeout(() => enhanceNativeQrButtons(parentDoc, handleQrButtonTrigger, qrButtonCleanups), 200);
   });
 
   const beforeGenListeners: Array<{ stop: () => void }> = [];
@@ -233,6 +238,13 @@ function init() {
   const cleanup = () => {
     clearTimeout(enhanceTimer);
     clearInterval(enhanceInterval);
+    qrButtonCleanups.splice(0).forEach(fn => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
     qrBtnListener?.stop();
     chatChangeListener.stop();
     beforeGenListeners.forEach(l => l.stop());
@@ -250,4 +262,3 @@ function init() {
 $(() => {
   errorCatched(init)();
 });
-

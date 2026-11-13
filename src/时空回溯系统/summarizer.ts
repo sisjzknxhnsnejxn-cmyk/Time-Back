@@ -35,7 +35,12 @@ export function parseTagNames(tagsInput: string): string[] {
   if (!tagsInput || !tagsInput.trim()) return [];
   const parts = tagsInput
     .split(/[,，;；\s\n]+/)
-    .map(raw => raw.trim().replace(/^<+\/?|\/?>+$/g, '').trim())
+    .map(raw =>
+      raw
+        .trim()
+        .replace(/^<+\/?|\/?>+$/g, '')
+        .trim(),
+    )
     .filter(Boolean);
   return Array.from(new Set(parts));
 }
@@ -113,20 +118,22 @@ export function cleanSummaryOutputText(text: string, tagOptions?: TagFilterOptio
   if (tagOptions && tagOptions.mode === 'strip') {
     output = applyTagFilter(output, tagOptions);
   }
-  return output
-    .replace(/^```[\w-]*\s*/i, '')
-    .replace(/\s*```$/i, '')
-    // 移除 Markdown 标题符号，如 "### 【时空节点】" -> "【时空节点】" 或 "### 时空节点" -> "【时空节点】"
-    .replace(/^[ \t]*#{1,6}[ \t]*【([^】]+)】[ \t]*$/gm, '【$1】')
-    .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$/gm, '【$1】')
-    // 移除 Markdown 粗体/斜体包裹符号 **text** / __text__
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    // 将行首 Markdown 无序列表 "- " 或 "* " 转换为纯文本圆点 "· "
-    .replace(/^[ \t]*[-*][ \t]+/gm, '· ')
-    // 移除行内残留的反引号
-    .replace(/`([^`]+)`/g, '$1')
-    .trim();
+  return (
+    output
+      .replace(/^```[\w-]*\s*/i, '')
+      .replace(/\s*```$/i, '')
+      // 移除 Markdown 标题符号，如 "### 【时空节点】" -> "【时空节点】" 或 "### 时空节点" -> "【时空节点】"
+      .replace(/^[ \t]*#{1,6}[ \t]*【([^】]+)】[ \t]*$/gm, '【$1】')
+      .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$/gm, '【$1】')
+      // 移除 Markdown 粗体/斜体包裹符号 **text** / __text__
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      // 将行首 Markdown 无序列表 "- " 或 "* " 转换为纯文本圆点 "· "
+      .replace(/^[ \t]*[-*][ \t]+/gm, '· ')
+      // 移除行内残留的反引号
+      .replace(/`([^`]+)`/g, '$1')
+      .trim()
+  );
 }
 
 export interface BuildSummaryPromptsOptions {
@@ -269,7 +276,6 @@ export function buildSummaryPrompts(options: BuildSummaryPromptsOptions): BuiltS
     }
   }
 
-
   const deltaSections: string[] = [];
   if (sourceMode !== 'raw_floors') {
     const bbDiff = buildBaiBaiSnapshotDiff(slot.floor, currentFloor);
@@ -340,11 +346,7 @@ export function buildSummaryPrompts(options: BuildSummaryPromptsOptions): BuiltS
 /**
  * 将超长文本按 maxChars 切分为多个批次（优先按楼层块边界切分，避免截断同一楼层）
  */
-export function splitTimelineIntoChunks(
-  timelineBlocks: string[],
-  fallbackText: string,
-  maxChars = 32000,
-): string[] {
+export function splitTimelineIntoChunks(timelineBlocks: string[], fallbackText: string, maxChars = 32000): string[] {
   const safeLimit = Math.max(1000, Math.floor(maxChars || 32000));
   const blocks = timelineBlocks.length > 0 ? timelineBlocks : fallbackText.split(/\n{2,}/).filter(Boolean);
   if (blocks.length === 0) return [];

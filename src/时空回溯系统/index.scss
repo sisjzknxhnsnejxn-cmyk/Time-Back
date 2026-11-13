@@ -51,7 +51,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100vw;
+    width: 100%;
     height: 100vh;
     height: 100dvh;
     z-index: 2147483000;
@@ -85,8 +85,8 @@
 
   color-scheme: dark;
   font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'HarmonyOS Sans SC',
-    'MiSans', 'Roboto', 'Noto Sans CJK SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'HarmonyOS Sans SC', 'MiSans',
+    'Roboto', 'Noto Sans CJK SC', 'Segoe UI', 'Microsoft YaHei', sans-serif;
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -187,13 +187,14 @@
   left: 0;
   right: 0;
   bottom: 0;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
   height: 100dvh;
   z-index: 2147483001;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0.75rem;
   padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
     max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
   background: var(--tl-overlay-bg);
@@ -254,10 +255,16 @@
     opacity: 0.42;
   }
 
-  &:hover,
   &:active {
     opacity: 1;
     transform: scale(1.04);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      opacity: 1;
+      transform: scale(1.04);
+    }
   }
 }
 
@@ -284,9 +291,13 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 700px;
   width: min(700px, 100%);
+  max-height: 86vh;
   max-height: min(86vh, 780px);
   max-height: min(86dvh, 780px);
+  margin: auto;
   border: 1px solid var(--tl-border);
   border-radius: 16px;
   background: var(--tl-modal-bg);
@@ -320,7 +331,6 @@
     }
   }
 }
-
 
 [script_id] .timeloop-header {
   display: flex;
@@ -1415,28 +1425,46 @@
 /* 说明书弹窗 (? HelpModal) */
 [script_id] .tl-help-backdrop {
   position: fixed;
-  inset: 0;
-  z-index: 9510;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 2147483002;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: 0.85rem;
+  padding: max(0.85rem, env(safe-area-inset-top, 0px)) max(0.85rem, env(safe-area-inset-right, 0px))
+    max(0.85rem, env(safe-area-inset-bottom, 0px)) max(0.85rem, env(safe-area-inset-left, 0px));
   background: rgba(2, 6, 23, 0.72);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  box-sizing: border-box;
+  pointer-events: auto;
+  overscroll-behavior: contain;
 }
 
 [script_id] .tl-help-sheet {
+  position: relative;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 520px;
   width: min(520px, 100%);
-  max-height: min(85vh, 680px);
-  max-height: min(85dvh, 680px);
+  max-height: 82vh;
+  max-height: min(82vh, 680px);
+  max-height: min(82dvh, 680px);
+  margin: auto;
   border: 1px solid var(--tl-border);
   border-radius: 14px;
   background: var(--tl-modal-bg);
+  color: var(--tl-text-main);
   box-shadow: var(--tl-shadow);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 [script_id] .tl-help-header {
@@ -1581,6 +1609,7 @@
   }
 
   [script_id] .tl-help-sheet {
+    max-width: 560px;
     width: min(560px, 92%);
   }
 }
@@ -1590,14 +1619,18 @@
   [script_id] .timeloop-overlay {
     align-items: center;
     justify-content: center;
+    padding: 0.75rem;
     padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
       max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
   }
 
   [script_id] .timeloop-modal {
+    width: 100%;
+    max-width: 560px;
     width: min(560px, 100%);
     max-height: 86vh;
     max-height: 86dvh;
+    margin: auto;
     border-radius: 18px;
     border: 1px solid var(--tl-border);
     padding-bottom: 0;
@@ -1679,6 +1712,7 @@
   }
 
   [script_id] .tl-help-backdrop {
+    padding: 0.75rem;
     padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
       max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
     align-items: center;
@@ -1686,9 +1720,12 @@
   }
 
   [script_id] .tl-help-sheet {
+    width: 100%;
+    max-width: 520px;
     width: min(520px, 100%);
-    max-height: 84vh;
-    max-height: 84dvh;
+    max-height: 82vh;
+    max-height: 82dvh;
+    margin: auto;
     border-radius: 18px;
     border: 1px solid var(--tl-border);
     padding-bottom: 0;
@@ -1741,14 +1778,17 @@
 
 /* 4. 手机横屏模式适配（限定 orientation: landscape，避免 Android 竖屏弹出软键盘时误触导致布局跳变） */
 @media (max-height: 540px) and (orientation: landscape) {
-  [script_id] .timeloop-overlay {
+  [script_id] .timeloop-overlay,
+  [script_id] .tl-help-backdrop {
+    padding: 0.35rem 0.5rem;
     padding: 0.35rem max(0.5rem, env(safe-area-inset-right, 0px)) 0.35rem max(0.5rem, env(safe-area-inset-left, 0px));
     align-items: center;
   }
 
-  [script_id] .timeloop-modal {
-    max-height: 96vh;
-    max-height: 96dvh;
+  [script_id] .timeloop-modal,
+  [script_id] .tl-help-sheet {
+    max-height: 94vh;
+    max-height: 94dvh;
     border-radius: 12px;
   }
 
@@ -1777,11 +1817,12 @@
   }
 }
 
-/* 5. Android 竖屏软键盘弹出压缩视口时：保持底部对齐不跳变，仅适度收紧头部间距 */
+/* 5. Android 竖屏软键盘弹出压缩视口时：保持居中不跳变，仅适度收紧头部间距 */
 @media (max-width: 640px) and (max-height: 540px) and (orientation: portrait) {
-  [script_id] .timeloop-modal {
-    max-height: 98vh;
-    max-height: 98dvh;
+  [script_id] .timeloop-modal,
+  [script_id] .tl-help-sheet {
+    max-height: 96vh;
+    max-height: 96dvh;
   }
 
   [script_id] .timeloop-header {

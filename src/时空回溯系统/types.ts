@@ -112,9 +112,12 @@ export const ApiSettingsSchema = z
     floating_ball_mode: FloatingBallModeSchema,
     floating_ball_side: FloatingBallSideSchema,
     floating_ball_top_percent: z.number().min(5).max(92).default(72),
-    floating_ball_x_percent: z.number().min(2).max(92).default(78),
-    floating_ball_y_percent: z.number().min(4).max(92).default(76),
+    floating_ball_x_percent: z.number().min(0).max(100).default(78),
+    floating_ball_y_percent: z.number().min(0).max(100).default(76),
+    floating_ball_x_ratio: z.number().min(0).max(1).default(1),
+    floating_ball_y_ratio: z.number().min(0).max(1).default(0.78),
     floating_ball_mode_v3: z.boolean().default(false),
+    floating_ball_ratio_v1: z.boolean().default(false),
   })
   .prefault({});
 
